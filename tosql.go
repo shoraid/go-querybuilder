@@ -2,6 +2,7 @@ package goquerybuilder
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -39,6 +40,16 @@ func (b *builder) buildSelect() (string, []any, error) {
 	sb.WriteString(cols)
 	sb.WriteString(" FROM ")
 	sb.WriteString(b.dialect.QuoteTableWithAlias(b.table))
+
+	// --- LIMIT / OFFSET ---
+	if b.limit >= 0 {
+		sb.WriteString(" LIMIT ")
+		sb.WriteString(strconv.Itoa(b.limit))
+	}
+	if b.offset >= 0 {
+		sb.WriteString(" OFFSET ")
+		sb.WriteString(strconv.Itoa(b.offset))
+	}
 
 	return sb.String(), args, nil
 }

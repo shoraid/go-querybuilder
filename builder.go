@@ -9,6 +9,10 @@ type QueryBuilder interface {
 	From(table string) QueryBuilder
 	ToSQL() (string, []any, error)
 
+	// Pagination
+	Limit(limit int) QueryBuilder
+	Offset(offset int) QueryBuilder
+
 	// Getter
 	GetTable() string
 	GetColumns() []string
@@ -21,11 +25,15 @@ type builder struct {
 	action  string
 	table   string
 	columns []string
+	limit   int
+	offset  int
 }
 
 func New(d dialect.Dialect) QueryBuilder {
 	return &builder{
 		dialect: d,
+		limit:   -1,
+		offset:  -1,
 	}
 }
 

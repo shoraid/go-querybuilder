@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBuilder_ToSQL(t *testing.T) {
+func TestBuilder_ToSQL_Select_Simple(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -72,6 +72,8 @@ func TestBuilder_ToSQL(t *testing.T) {
 				action:  tt.action,
 				table:   tt.table,
 				columns: tt.columns,
+				limit:   -1,
+				offset:  -1,
 			}
 
 			// Act
@@ -89,6 +91,77 @@ func TestBuilder_ToSQL(t *testing.T) {
 			assert.NoError(t, err, "expected no error")
 			assert.Equal(t, tt.expectedSQL, sql, "SQL output should match")
 			assert.Empty(t, args, "expected no args for simple SELECT")
+		})
+	}
+}
+
+func TestBuilder_ToSQL_Select_LimitOffset(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		table       string
+		limit       int
+		offset      int
+		expectedSQL string
+	}{
+		{
+			name:        "should build select with limit",
+			table:       "users",
+			limit:       10,
+			offset:      -1, // default
+			expectedSQL: `SELECT * FROM "users" LIMIT 10`,
+		},
+		{
+			name:        "should build select with offset",
+			table:       "users",
+			limit:       -1, // default
+			offset:      5,
+			expectedSQL: `SELECT * FROM "users" OFFSET 5`,
+		},
+		{
+			name:        "should build select with limit and offset",
+			table:       "users",
+			limit:       10,
+			offset:      5,
+			expectedSQL: `SELECT * FROM "users" LIMIT 10 OFFSET 5`,
+		},
+		{
+			name:        "should ignore negative limit and offset",
+			table:       "users",
+			limit:       -10,
+			offset:      -5,
+			expectedSQL: `SELECT * FROM "users"`,
+		},
+		{
+			name:        "should handle zero limit and offset",
+			table:       "users",
+			limit:       0,
+			offset:      0,
+			expectedSQL: `SELECT * FROM "users" LIMIT 0 OFFSET 0`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: dialect.PostgresDialect{},
+				action:  "select",
+				table:   tt.table,
+				limit:   tt.limit,
+				offset:  tt.offset,
+			}
+
+			// Act
+			sql, args, err := b.ToSQL()
+
+			// Assert
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Empty(t, args, "expected no args for limit/offset SELECT")
 		})
 	}
 }
