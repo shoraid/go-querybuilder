@@ -11,40 +11,46 @@ func TestBuilder_OrderBy(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		column      string
-		direction   string
-		expectedSQL []string
+		name            string
+		initialOrderBys []string
+		column          string
+		direction       string
+		expectedSQL     []string
 	}{
 		{
-			name:        "should add single ASC order by clause",
-			column:      "id",
-			direction:   "asc",
-			expectedSQL: []string{`"id" ASC`},
+			name:            "should add single ASC order by clause",
+			initialOrderBys: []string{},
+			column:          "id",
+			direction:       "asc",
+			expectedSQL:     []string{`"id" ASC`},
 		},
 		{
-			name:        "should add single DESC order by clause",
-			column:      "name",
-			direction:   "DESC",
-			expectedSQL: []string{`"name" DESC`},
+			name:            "should add single DESC order by clause",
+			initialOrderBys: []string{},
+			column:          "name",
+			direction:       "DESC",
+			expectedSQL:     []string{`"name" DESC`},
 		},
 		{
-			name:        "should default to ASC for invalid direction",
-			column:      "created_at",
-			direction:   "invalid",
-			expectedSQL: []string{`"created_at" ASC`},
+			name:            "should default to ASC for invalid direction",
+			initialOrderBys: []string{},
+			column:          "created_at",
+			direction:       "invalid",
+			expectedSQL:     []string{`"created_at" ASC`},
 		},
 		{
-			name:        "should handle multiple order by calls",
-			column:      "email",
-			direction:   "ASC",
-			expectedSQL: []string{`"id" ASC`, `"email" ASC`}, // Assuming a previous call added "id" ASC
+			name:            "should handle multiple order by calls",
+			initialOrderBys: []string{`"id" ASC`},
+			column:          "email",
+			direction:       "ASC",
+			expectedSQL:     []string{`"id" ASC`, `"email" ASC`},
 		},
 		{
-			name:        "should quote column name correctly",
-			column:      "user_id",
-			direction:   "DESC",
-			expectedSQL: []string{`"user_id" DESC`},
+			name:            "should quote column name correctly",
+			initialOrderBys: []string{},
+			column:          "user_id",
+			direction:       "DESC",
+			expectedSQL:     []string{`"user_id" DESC`},
 		},
 	}
 
@@ -53,9 +59,9 @@ func TestBuilder_OrderBy(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{dialect: dialect.PostgresDialect{}}
-			if tt.name == "should handle multiple order by calls" {
-				b.OrderBy("id", "ASC")
+			b := &builder{
+				dialect:  dialect.PostgresDialect{},
+				orderBys: tt.initialOrderBys,
 			}
 
 			// Act
@@ -72,24 +78,28 @@ func TestBuilder_OrderByRaw(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		expression  string
-		expectedSQL []string
+		name            string
+		initialOrderBys []string
+		expression      string
+		expectedSQL     []string
 	}{
 		{
-			name:        "should add raw order by expression",
-			expression:  "LENGTH(name) DESC",
-			expectedSQL: []string{"LENGTH(name) DESC"},
+			name:            "should add raw order by expression",
+			initialOrderBys: []string{},
+			expression:      "LENGTH(name) DESC",
+			expectedSQL:     []string{"LENGTH(name) DESC"},
 		},
 		{
-			name:        "should add another raw order by expression",
-			expression:  "RANDOM()",
-			expectedSQL: []string{"id ASC", "RANDOM()"}, // Assuming a previous call added "id ASC"
+			name:            "should add another raw order by expression",
+			initialOrderBys: []string{"id ASC"},
+			expression:      "RANDOM()",
+			expectedSQL:     []string{"id ASC", "RANDOM()"},
 		},
 		{
-			name:        "should handle complex raw expression",
-			expression:  "CASE WHEN status = 'active' THEN 1 ELSE 0 END DESC",
-			expectedSQL: []string{"CASE WHEN status = 'active' THEN 1 ELSE 0 END DESC"},
+			name:            "should handle complex raw expression",
+			initialOrderBys: []string{},
+			expression:      "CASE WHEN status = 'active' THEN 1 ELSE 0 END DESC",
+			expectedSQL:     []string{"CASE WHEN status = 'active' THEN 1 ELSE 0 END DESC"},
 		},
 	}
 
@@ -98,9 +108,9 @@ func TestBuilder_OrderByRaw(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{dialect: dialect.PostgresDialect{}}
-			if tt.name == "should add another raw order by expression" {
-				b.OrderBy("id", "ASC")
+			b := &builder{
+				dialect:  dialect.PostgresDialect{},
+				orderBys: tt.initialOrderBys,
 			}
 
 			// Act
@@ -124,55 +134,62 @@ func TestBuilder_OrderBySafe(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		userInput     string
-		dir           string
-		whitelist     map[string]string
-		expectedOrder []string
-		expectedError string
+		name            string
+		initialOrderBys []string
+		userInput       string
+		dir             string
+		whitelist       map[string]string
+		expectedOrder   []string
+		expectedError   string
 	}{
 		{
-			name:          "should add valid column and direction",
-			userInput:     "id",
-			dir:           "asc",
-			whitelist:     whitelist,
-			expectedOrder: []string{`"id" ASC`},
+			name:            "should add valid column and direction",
+			initialOrderBys: []string{},
+			userInput:       "id",
+			dir:             "asc",
+			whitelist:       whitelist,
+			expectedOrder:   []string{`"id" ASC`},
 		},
 		{
-			name:          "should add valid column with DESC direction",
-			userInput:     "name",
-			dir:           "DESC",
-			whitelist:     whitelist,
-			expectedOrder: []string{`"name" DESC`},
+			name:            "should add valid column with DESC direction",
+			initialOrderBys: []string{},
+			userInput:       "name",
+			dir:             "DESC",
+			whitelist:       whitelist,
+			expectedOrder:   []string{`"name" DESC`},
 		},
 		{
-			name:          "should default to ASC for invalid direction",
-			userInput:     "created_at",
-			dir:           "invalid",
-			whitelist:     whitelist,
-			expectedOrder: []string{`"created_at" ASC`},
+			name:            "should default to ASC for invalid direction",
+			initialOrderBys: []string{},
+			userInput:       "created_at",
+			dir:             "invalid",
+			whitelist:       whitelist,
+			expectedOrder:   []string{`"created_at" ASC`},
 		},
 		{
-			name:          "should handle column with alias from whitelist",
-			userInput:     "email",
-			dir:           "desc",
-			whitelist:     whitelist,
-			expectedOrder: []string{`"u"."email" DESC`},
+			name:            "should handle column with alias from whitelist",
+			initialOrderBys: []string{},
+			userInput:       "email",
+			dir:             "desc",
+			whitelist:       whitelist,
+			expectedOrder:   []string{`"u"."email" DESC`},
 		},
 		{
-			name:          "should return error for invalid column",
-			userInput:     "invalid_col",
-			dir:           "asc",
-			whitelist:     whitelist,
-			expectedOrder: nil,
-			expectedError: "invalid order by column: invalid_col",
+			name:            "should handle multiple safe order by calls",
+			initialOrderBys: []string{`"id" DESC`},
+			userInput:       "name",
+			dir:             "ASC",
+			whitelist:       whitelist,
+			expectedOrder:   []string{`"id" DESC`, `"name" ASC`},
 		},
 		{
-			name:          "should handle multiple safe order by calls",
-			userInput:     "name",
-			dir:           "ASC",
-			whitelist:     whitelist,
-			expectedOrder: []string{`"id" DESC`, `"name" ASC`}, // Assuming a previous call added "id" DESC
+			name:            "should return error for invalid column",
+			initialOrderBys: []string{},
+			userInput:       "invalid_col",
+			dir:             "asc",
+			whitelist:       whitelist,
+			expectedOrder:   nil,
+			expectedError:   "invalid order by column: invalid_col",
 		},
 	}
 
@@ -181,9 +198,9 @@ func TestBuilder_OrderBySafe(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{dialect: dialect.PostgresDialect{}}
-			if tt.name == "should handle multiple safe order by calls" {
-				_, _ = b.OrderBySafe("id", "desc", whitelist)
+			b := &builder{
+				dialect:  dialect.PostgresDialect{},
+				orderBys: tt.initialOrderBys,
 			}
 
 			// Act
