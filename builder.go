@@ -5,8 +5,11 @@ import "github.com/shoraid/go-querybuilder/dialect"
 type QueryBuilder interface {
 	// Core
 	Select(columns ...string) QueryBuilder
+	SelectSafe(userInput []string, whitelist map[string]string) (QueryBuilder, error)
 	AddSelect(column string) QueryBuilder
+	AddSelectSafe(userInput string, whitelist map[string]string) (QueryBuilder, error)
 	From(table string) QueryBuilder
+	FromSafe(userInput string, whitelist map[string]string) (QueryBuilder, error)
 	ToSQL() (string, []any, error)
 
 	// Order
