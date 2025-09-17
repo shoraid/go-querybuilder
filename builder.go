@@ -9,6 +9,11 @@ type QueryBuilder interface {
 	From(table string) QueryBuilder
 	ToSQL() (string, []any, error)
 
+	// Order
+	OrderBy(column string, direction string) QueryBuilder
+	OrderByRaw(expr string) QueryBuilder
+	OrderBySafe(userInput string, dir string, whitelist map[string]string) (QueryBuilder, error)
+
 	// Pagination
 	Limit(limit int) QueryBuilder
 	Offset(offset int) QueryBuilder
@@ -21,12 +26,13 @@ type QueryBuilder interface {
 }
 
 type builder struct {
-	dialect dialect.Dialect
-	action  string
-	table   string
-	columns []string
-	limit   int
-	offset  int
+	dialect  dialect.Dialect
+	action   string
+	table    string
+	columns  []string
+	orderBys []string
+	limit    int
+	offset   int
 }
 
 func New(d dialect.Dialect) QueryBuilder {

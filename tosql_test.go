@@ -95,6 +95,72 @@ func TestBuilder_ToSQL_Select_Simple(t *testing.T) {
 	}
 }
 
+func TestBuilder_ToSQL_Select_OrderBy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		table       string
+		orderBys    []string
+		expectedSQL string
+	}{
+		{
+			name:        "should build select with single order by",
+			table:       "users",
+			orderBys:    []string{`"id" ASC`},
+			expectedSQL: `SELECT * FROM "users" ORDER BY "id" ASC`,
+		},
+		{
+			name:        "should build select with multiple order by",
+			table:       "users",
+			orderBys:    []string{`"name" DESC`, `"created_at" ASC`},
+			expectedSQL: `SELECT * FROM "users" ORDER BY "name" DESC, "created_at" ASC`,
+		},
+		{
+			name:        "should build select with raw order by",
+			table:       "products",
+			orderBys:    []string{`LENGTH(name) DESC`},
+			expectedSQL: `SELECT * FROM "products" ORDER BY LENGTH(name) DESC`,
+		},
+		{
+			name:        "should build select with mixed order by",
+			table:       "orders",
+			orderBys:    []string{`"status" ASC`, `CASE WHEN amount > 100 THEN 1 ELSE 0 END DESC`},
+			expectedSQL: `SELECT * FROM "orders" ORDER BY "status" ASC, CASE WHEN amount > 100 THEN 1 ELSE 0 END DESC`,
+		},
+		{
+			name:        "should not add order by clause if empty",
+			table:       "items",
+			orderBys:    []string{},
+			expectedSQL: `SELECT * FROM "items"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect:  dialect.PostgresDialect{},
+				action:   "select",
+				table:    tt.table,
+				orderBys: tt.orderBys,
+				limit:    -1,
+				offset:   -1,
+			}
+
+			// Act
+			sql, args, err := b.ToSQL()
+
+			// Assert
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "SQL output should match")
+			assert.Empty(t, args, "expected no args for order by SELECT")
+		})
+	}
+}
+
 func TestBuilder_ToSQL_Select_LimitOffset(t *testing.T) {
 	t.Parallel()
 
@@ -162,6 +228,82 @@ func TestBuilder_ToSQL_Select_LimitOffset(t *testing.T) {
 			assert.NoError(t, err, "expected no error")
 			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
 			assert.Empty(t, args, "expected no args for limit/offset SELECT")
+		})
+	}
+}
+
+func TestBuilder_ToSQL_Select_Combined(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		table       string
+		columns     []string
+		orderBys    []string
+		limit       int
+		offset      int
+		expectedSQL string
+	}{
+		{
+			name:        "should combine columns, order by, limit, and offset",
+			table:       "products p",
+			columns:     []string{"p.id", "p.name"},
+			orderBys:    []string{`"p"."name" ASC`, `"p"."price" DESC`},
+			limit:       10,
+			offset:      20,
+			expectedSQL: `SELECT "p"."id", "p"."name" FROM "products" AS p ORDER BY "p"."name" ASC, "p"."price" DESC LIMIT 10 OFFSET 20`,
+		},
+		{
+			name:        "should combine with only limit",
+			table:       "users",
+			columns:     []string{"id"},
+			orderBys:    []string{},
+			limit:       5,
+			offset:      -1,
+			expectedSQL: `SELECT "id" FROM "users" LIMIT 5`,
+		},
+		{
+			name:        "should combine with only order by",
+			table:       "orders",
+			columns:     []string{},
+			orderBys:    []string{`"created_at" DESC`},
+			limit:       -1,
+			offset:      -1,
+			expectedSQL: `SELECT * FROM "orders" ORDER BY "created_at" DESC`,
+		},
+		{
+			name:        "should combine with all clauses, no columns (select *)",
+			table:       "items",
+			columns:     []string{},
+			orderBys:    []string{`"category" ASC`},
+			limit:       100,
+			offset:      0,
+			expectedSQL: `SELECT * FROM "items" ORDER BY "category" ASC LIMIT 100 OFFSET 0`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect:  dialect.PostgresDialect{},
+				action:   "select",
+				table:    tt.table,
+				columns:  tt.columns,
+				orderBys: tt.orderBys,
+				limit:    tt.limit,
+				offset:   tt.offset,
+			}
+
+			// Act
+			sql, args, err := b.ToSQL()
+
+			// Assert
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "SQL output should match")
+			assert.Empty(t, args, "expected no args for combined SELECT")
 		})
 	}
 }

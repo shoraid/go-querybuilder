@@ -41,6 +41,12 @@ func (b *builder) buildSelect() (string, []any, error) {
 	sb.WriteString(" FROM ")
 	sb.WriteString(b.dialect.QuoteTableWithAlias(b.table))
 
+	// --- ORDER BY clause ---
+	if len(b.orderBys) > 0 {
+		sb.WriteString(" ORDER BY ")
+		sb.WriteString(strings.Join(b.orderBys, ", "))
+	}
+
 	// --- LIMIT / OFFSET ---
 	if b.limit >= 0 {
 		sb.WriteString(" LIMIT ")
