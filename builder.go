@@ -12,6 +12,10 @@ type QueryBuilder interface {
 	FromSafe(userInput string, whitelist map[string]string) (QueryBuilder, error)
 	ToSQL() (string, []any, error)
 
+	// Where
+	Where(column string, operator string, value any) QueryBuilder
+	OrWhere(column string, operator string, value any) QueryBuilder
+
 	// Order
 	OrderBy(column string, direction string) QueryBuilder
 	OrderByRaw(expr string) QueryBuilder
@@ -26,6 +30,15 @@ type QueryBuilder interface {
 	GetColumns() []string
 	GetAction() string
 	GetDialect() dialect.Dialect
+	Args() []any
+	ArgsByIndexes(indexes ...int) []any
+	AddArgs(args ...any)
+}
+
+type condition struct {
+	conj       string
+	query      string
+	argIndexes []int
 }
 
 type builder struct {
@@ -33,9 +46,11 @@ type builder struct {
 	action   string
 	table    string
 	columns  []string
+	wheres   []condition
 	orderBys []string
 	limit    int
 	offset   int
+	args     []any
 }
 
 func New(d dialect.Dialect) QueryBuilder {
@@ -60,4 +75,27 @@ func (b *builder) GetTable() string {
 
 func (b *builder) GetColumns() []string {
 	return b.columns
+}
+
+func (b *builder) Args() []any {
+	return b.args
+}
+
+func (b *builder) ArgsByIndexes(indexes ...int) []any {
+	if len(indexes) == 0 {
+		return []any{} // explicitly return empty slice
+	}
+
+	res := make([]any, 0, len(indexes))
+	for _, i := range indexes {
+		if i >= 0 && i < len(b.args) {
+			res = append(res, b.args[i])
+		}
+	}
+
+	return res
+}
+
+func (b *builder) AddArgs(args ...any) {
+	b.args = append(b.args, args...)
 }

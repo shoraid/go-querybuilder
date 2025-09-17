@@ -41,6 +41,14 @@ func (b *builder) buildSelect() (string, []any, error) {
 	sb.WriteString(" FROM ")
 	sb.WriteString(b.dialect.QuoteTableWithAlias(b.table))
 
+	// --- WHERE clause ---
+	if len(b.wheres) > 0 {
+		sb.WriteString(" WHERE ")
+		whereSQL, whereArgs := b.renderConditions(b.wheres)
+		sb.WriteString(whereSQL)
+		args = append(args, whereArgs...)
+	}
+
 	// --- ORDER BY clause ---
 	if len(b.orderBys) > 0 {
 		sb.WriteString(" ORDER BY ")
@@ -58,4 +66,20 @@ func (b *builder) buildSelect() (string, []any, error) {
 	}
 
 	return sb.String(), args, nil
+}
+
+func (b *builder) renderConditions(conds []condition) (string, []any) {
+	parts := []string{}
+	var resArgs []any
+
+	for i, c := range conds {
+		if i == 0 {
+			parts = append(parts, c.query)
+		} else {
+			parts = append(parts, c.conj+" "+c.query)
+		}
+		resArgs = append(resArgs, b.ArgsByIndexes(c.argIndexes...)...)
+	}
+
+	return strings.Join(parts, " "), resArgs
 }
