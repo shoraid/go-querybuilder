@@ -17,10 +17,10 @@ type QueryBuilder interface {
 	Where(column string, operator string, value any) QueryBuilder
 	OrWhere(column string, operator string, value any) QueryBuilder
 
-	// Order
+	// Order By
 	OrderBy(column, direction string) QueryBuilder
 	OrderByRaw(expr string, args ...any) QueryBuilder
-	OrderBySafe(userInput, dir string, whitelist map[string]string) (QueryBuilder, error)
+	OrderBySafe(userInput, dir string, whitelist map[string]string) QueryBuilder
 
 	// Pagination
 	Limit(limit int) QueryBuilder

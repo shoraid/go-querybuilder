@@ -1,7 +1,6 @@
 package goquerybuilder
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -30,10 +29,10 @@ func (b *builder) OrderByRaw(expr string, args ...any) QueryBuilder {
 	return b
 }
 
-func (b *builder) OrderBySafe(userInput string, dir string, whitelist map[string]string) (QueryBuilder, error) {
+func (b *builder) OrderBySafe(userInput string, dir string, whitelist map[string]string) QueryBuilder {
 	col, ok := whitelist[userInput]
 	if !ok {
-		return nil, fmt.Errorf("invalid order by column: %s", userInput)
+		return b
 	}
 
 	dir = strings.ToUpper(dir)
@@ -41,5 +40,5 @@ func (b *builder) OrderBySafe(userInput string, dir string, whitelist map[string
 		dir = "ASC"
 	}
 
-	return b.OrderBy(col, dir), nil
+	return b.OrderBy(col, dir)
 }

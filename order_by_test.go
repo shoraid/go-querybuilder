@@ -153,7 +153,6 @@ func TestBuilder_OrderBySafe(t *testing.T) {
 		dir              string
 		whitelist        map[string]string
 		expectedOrderBys []orderBy
-		expectedError    string
 	}{
 		{
 			name:            "should add valid column and direction",
@@ -209,22 +208,20 @@ func TestBuilder_OrderBySafe(t *testing.T) {
 			},
 		},
 		{
-			name:             "should return error for invalid column",
+			name:             "should not add invalid column",
 			initialOrderBys:  []orderBy{},
 			userInput:        "invalid_col",
 			dir:              "asc",
 			whitelist:        whitelist,
-			expectedOrderBys: []orderBy{}, // OrderBys should remain unchanged on error
-			expectedError:    "invalid order by column: invalid_col",
+			expectedOrderBys: []orderBy{},
 		},
 		{
-			name:             "should return error for empty whitelist",
+			name:             "should not add column if whitelist is empty",
 			initialOrderBys:  []orderBy{},
 			userInput:        "id",
 			dir:              "asc",
 			whitelist:        map[string]string{},
-			expectedOrderBys: []orderBy{}, // OrderBys should remain unchanged on error
-			expectedError:    "invalid order by column: id",
+			expectedOrderBys: []orderBy{},
 		},
 	}
 
@@ -236,20 +233,51 @@ func TestBuilder_OrderBySafe(t *testing.T) {
 			b := &builder{orderBys: tt.initialOrderBys}
 
 			// Act
-			result, err := b.OrderBySafe(tt.userInput, tt.dir, tt.whitelist)
+			result := b.OrderBySafe(tt.userInput, tt.dir, tt.whitelist)
 
 			// Assert
-			if tt.expectedError != "" {
-				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to match")
-				assert.Nil(t, result, "expected nil builder on error")
-				assert.Equal(t, tt.expectedOrderBys, b.orderBys, "expected order bys to remain unchanged on error")
-				return
-			}
-
-			assert.NoError(t, err, "expected no error")
 			assert.Equal(t, tt.expectedOrderBys, b.orderBys, "expected order by clauses to be updated correctly")
 			assert.Equal(t, b, result, "expected OrderBySafe() to return the same builder instance")
 		})
+	}
+}
+
+// -----------------
+// --- BENCHMARK ---
+// -----------------
+
+func BenchmarkBuilder_OrderBy(b *testing.B) {
+	builder := &builder{}
+	column := "created_at"
+	direction := "DESC"
+
+	for b.Loop() {
+		builder.OrderBy(column, direction)
+	}
+}
+
+func BenchmarkBuilder_OrderByRaw(b *testing.B) {
+	builder := &builder{}
+	expression := "LENGTH(name) DESC"
+	args := []any{}
+
+	for b.Loop() {
+		builder.OrderByRaw(expression, args...)
+	}
+}
+
+func BenchmarkBuilder_OrderBySafe(b *testing.B) {
+	builder := &builder{}
+	userInput := "created_at"
+	dir := "DESC"
+	whitelist := map[string]string{
+		"id":         "id",
+		"name":       "name",
+		"email":      "u.email",
+		"created_at": "created_at",
+	}
+
+	for b.Loop() {
+		builder.OrderBySafe(userInput, dir, whitelist)
 	}
 }
