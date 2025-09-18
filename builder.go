@@ -49,22 +49,18 @@ type QueryBuilder interface {
 
 	// Getter
 	GetTable() string
-	GetColumns() []string
 	GetAction() string
 	Dialect() Dialect
-	Args() []any
-	ArgsByIndexes(indexes ...int) []any
-	AddArgs(args ...any)
 }
 
-type QueryType string
+type QueryType uint8
 
 const (
-	QueryBasic   QueryType = "Basic"
-	QueryBetween QueryType = "Between"
-	QueryNested  QueryType = "Nested"
-	QueryNull    QueryType = "Null"
-	QueryRaw     QueryType = "Raw"
+	QueryBasic   QueryType = 1
+	QueryBetween QueryType = 2
+	QueryNested  QueryType = 3
+	QueryNull    QueryType = 4
+	QueryRaw     QueryType = 5
 )
 
 type column struct {
@@ -101,7 +97,6 @@ type builder struct {
 	orderBys []orderBy
 	limit    int
 	offset   int
-	args     []any
 }
 
 func New(d Dialect) QueryBuilder {
@@ -122,44 +117,4 @@ func (b *builder) GetAction() string {
 
 func (b *builder) GetTable() string {
 	return b.table
-}
-
-func (b *builder) GetColumns() []string {
-	if b.columns == nil {
-		return nil
-	}
-
-	res := make([]string, len(b.columns))
-	for i, col := range b.columns {
-		if col.queryType == QueryBasic {
-			res[i] = col.name
-		} else {
-			res[i] = col.expr
-		}
-	}
-
-	return res
-}
-
-func (b *builder) Args() []any {
-	return b.args
-}
-
-func (b *builder) ArgsByIndexes(indexes ...int) []any {
-	if len(indexes) == 0 {
-		return []any{} // explicitly return empty slice
-	}
-
-	res := make([]any, 0, len(indexes))
-	for _, i := range indexes {
-		if i >= 0 && i < len(b.args) {
-			res = append(res, b.args[i])
-		}
-	}
-
-	return res
-}
-
-func (b *builder) AddArgs(args ...any) {
-	b.args = append(b.args, args...)
 }
