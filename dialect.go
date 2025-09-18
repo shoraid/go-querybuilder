@@ -6,6 +6,8 @@ type Dialect interface {
 	WrapColumn(expr string) string
 	WrapIdentifier(identifier string) string
 	WrapTable(expr string) string
+
+	CompileSelect(b *builder) (string, []any, error)
 }
 
 type DialectCapabilities struct {

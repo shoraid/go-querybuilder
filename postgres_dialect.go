@@ -51,3 +51,156 @@ func (d PostgresDialect) WrapTable(expr string) string {
 
 	return `"` + expr + `"`
 }
+
+func (d PostgresDialect) CompileSelect(b *builder) (string, []any, error) {
+	if b.table == "" {
+		return "", nil, fmt.Errorf("no table specified")
+	}
+
+	args := []any{}
+	var sb strings.Builder
+
+	// SELECT clause
+	sb.WriteString("SELECT ")
+	sb.WriteString(d.compileSelectClause(b.columns, &args))
+
+	// FROM clause
+	sb.WriteString(" FROM ")
+	sb.WriteString(d.WrapTable(b.table))
+
+	// WHERE clause (recursive)
+	if len(b.wheres) > 0 {
+		sb.WriteString(" WHERE ")
+		sb.WriteString(d.compileWhereClause(b.wheres, &args))
+	}
+
+	// ORDER BY clause
+	if len(b.orderBys) > 0 {
+		sb.WriteString(" ORDER BY ")
+		sb.WriteString(d.compileOrderByClause(b.orderBys, &args))
+	}
+
+	// LIMIT / OFFSET
+	if b.limit >= 0 {
+		sb.WriteString(fmt.Sprintf(" LIMIT %d", b.limit))
+	}
+	if b.offset >= 0 {
+		sb.WriteString(fmt.Sprintf(" OFFSET %d", b.offset))
+	}
+
+	return sb.String(), args, nil
+}
+
+func (d PostgresDialect) compileSelectClause(columns []column, globalArgs *[]any) string {
+	var sb strings.Builder
+
+	if len(columns) == 0 {
+		sb.WriteString("*")
+	} else {
+		for i, col := range columns {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			switch col.queryType {
+			case QueryBasic:
+				sb.WriteString(d.WrapColumn(col.name))
+			case QueryRaw:
+				sb.WriteString(col.expr)
+				*globalArgs = append(*globalArgs, col.args...)
+			}
+		}
+	}
+
+	return sb.String()
+}
+
+// Recursive WHERE compiler
+func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) string {
+	var sb strings.Builder
+
+	for i, w := range wheres {
+		if i > 0 {
+			sb.WriteString(" ")
+			sb.WriteString(w.conj)
+			sb.WriteString(" ")
+		}
+
+		switch w.queryType {
+		case QueryBasic:
+			sb.WriteString(d.WrapColumn(w.column))
+			sb.WriteString(" ")
+			sb.WriteString(w.operator)
+			sb.WriteString(" ")
+			if strings.Contains(w.operator, "IN") {
+				sb.WriteString("(")
+				vals := w.args[0].([]any)
+				for j, v := range vals {
+					if j > 0 {
+						sb.WriteString(", ")
+					}
+					sb.WriteString(d.Placeholder(len(*globalArgs) + 1))
+					*globalArgs = append(*globalArgs, v)
+				}
+				sb.WriteString(")")
+			} else {
+				sb.WriteString(d.Placeholder(len(*globalArgs) + 1))
+				*globalArgs = append(*globalArgs, w.args...)
+			}
+
+		case QueryBetween:
+			sb.WriteString(d.WrapColumn(w.column))
+			sb.WriteString(" ")
+			sb.WriteString(w.operator)
+			sb.WriteString(" ")
+			sb.WriteString(d.Placeholder(len(*globalArgs) + 1))
+			sb.WriteString(" AND ")
+			sb.WriteString(d.Placeholder(len(*globalArgs) + 2))
+			*globalArgs = append(*globalArgs, w.args...)
+
+		case QueryNull:
+			sb.WriteString(d.WrapColumn(w.column))
+			sb.WriteString(" ")
+			sb.WriteString(w.operator)
+
+		case QueryRaw:
+			expr := w.expr
+			for _, a := range w.args {
+				expr = strings.Replace(expr, "?", d.Placeholder(len(*globalArgs)+1), 1)
+				*globalArgs = append(*globalArgs, a)
+			}
+			sb.WriteString(expr)
+
+		case QueryNested:
+			sb.WriteString("(")
+			sb.WriteString(d.compileWhereClause(w.nested, globalArgs)) // recursion updates globalArgs directly
+			sb.WriteString(")")
+		}
+	}
+
+	return sb.String()
+}
+
+func (d PostgresDialect) compileOrderByClause(orderBys []orderBy, globalArgs *[]any) string {
+	var sb strings.Builder
+
+	for i, ob := range orderBys {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		switch ob.queryType {
+		case QueryBasic:
+			sb.WriteString(d.WrapColumn(ob.column))
+			sb.WriteString(" ")
+			sb.WriteString(ob.dir)
+		case QueryRaw:
+			expr := ob.expr
+			for _, a := range ob.args {
+				expr = strings.Replace(expr, "?", d.Placeholder(len(*globalArgs)+1), 1)
+				*globalArgs = append(*globalArgs, a)
+			}
+			sb.WriteString(expr)
+		}
+	}
+
+	return sb.String()
+}
