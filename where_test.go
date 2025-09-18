@@ -906,6 +906,242 @@ func TestBuilder_OrWhereRaw(t *testing.T) {
 	}
 }
 
+func TestBuilder_WhereGroup(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		groupFn        func(QueryBuilder)
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single WHERE group condition",
+			initialWheres: []where{},
+			groupFn: func(qb QueryBuilder) {
+				qb.Where("status", "=", "active").OrWhere("status", "=", "pending")
+			},
+			expectedWheres: []where{
+				{
+					queryType: QueryNested,
+					conj:      "AND",
+					nested: []where{
+						{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+						{queryType: QueryBasic, column: "status", operator: "=", conj: "OR", args: []any{"pending"}},
+					},
+				},
+			},
+		},
+		{
+			name: "should add a WHERE group condition after an existing WHERE",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			groupFn: func(qb QueryBuilder) {
+				qb.Where("age", ">", 18).Where("age", "<", 65)
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{
+					queryType: QueryNested,
+					conj:      "AND",
+					nested: []where{
+						{queryType: QueryBasic, column: "age", operator: ">", conj: "AND", args: []any{18}},
+						{queryType: QueryBasic, column: "age", operator: "<", conj: "AND", args: []any{65}},
+					},
+				},
+			},
+		},
+		{
+			name: "should add a nested WHERE group with raw and basic conditions",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+			},
+			groupFn: func(qb QueryBuilder) {
+				qb.WhereRaw("amount > ?", 100).OrWhere("currency", "=", "USD")
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+				{
+					queryType: QueryNested,
+					conj:      "AND",
+					nested: []where{
+						{queryType: QueryRaw, expr: "amount > ?", conj: "AND", args: []any{100}},
+						{queryType: QueryBasic, column: "currency", operator: "=", conj: "OR", args: []any{"USD"}},
+					},
+				},
+			},
+		},
+		{
+			name: "should add a deeply nested WHERE group with multiple AND or OR conditions",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "user_id", operator: "=", conj: "AND", args: []any{123}},
+			},
+			groupFn: func(qb QueryBuilder) {
+				qb.
+					Where("status", "=", "active").
+					OrWhereGroup(func(nestedQb QueryBuilder) {
+						nestedQb.
+							Where("category", "=", "premium").
+							WhereRaw("price > ?", 100)
+					}).
+					WhereIn("region", []any{"north", "east"})
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "user_id", operator: "=", conj: "AND", args: []any{123}},
+				{
+					queryType: QueryNested,
+					conj:      "AND",
+					nested: []where{
+						{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+						{
+							queryType: QueryNested,
+							conj:      "OR",
+							nested: []where{
+								{queryType: QueryBasic, column: "category", operator: "=", conj: "AND", args: []any{"premium"}},
+								{queryType: QueryRaw, expr: "price > ?", conj: "AND", args: []any{100}},
+							},
+						},
+						{queryType: QueryBasic, column: "region", operator: "IN", conj: "AND", args: []any{[]any{"north", "east"}}},
+					},
+				},
+			},
+		},
+		{
+			name:          "should not add an empty WHERE group",
+			initialWheres: []where{},
+			groupFn: func(qb QueryBuilder) {
+				// Do nothing
+			},
+			expectedWheres: []where{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.WhereGroup(tt.groupFn)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected WhereGroup() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereGroup(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		groupFn        func(QueryBuilder)
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single OR WHERE group condition",
+			initialWheres: []where{},
+			groupFn: func(qb QueryBuilder) {
+				qb.Where("status", "=", "active").Where("status", "=", "pending")
+			},
+			expectedWheres: []where{
+				{
+					queryType: QueryNested,
+					conj:      "OR",
+					nested: []where{
+						{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+						{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"pending"}},
+					},
+				},
+			},
+		},
+		{
+			name: "should add an OR WHERE group condition after an existing WHERE",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			groupFn: func(qb QueryBuilder) {
+				qb.Where("age", ">", 18).OrWhere("age", "<", 10)
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{
+					queryType: QueryNested,
+					conj:      "OR",
+					nested: []where{
+						{queryType: QueryBasic, column: "age", operator: ">", conj: "AND", args: []any{18}},
+						{queryType: QueryBasic, column: "age", operator: "<", conj: "OR", args: []any{10}},
+					},
+				},
+			},
+		},
+		{
+			name: "should add a deeply nested OR WHERE group with multiple AND or OR conditions",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "user_id", operator: "=", conj: "AND", args: []any{123}},
+			},
+			groupFn: func(qb QueryBuilder) {
+				qb.
+					Where("status", "=", "inactive").
+					OrWhereGroup(func(nestedQb QueryBuilder) {
+						nestedQb.
+							Where("category", "=", "basic").
+							OrWhereRaw("price < ?", 50)
+					}).
+					OrWhereIn("region", []any{"south", "west"})
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "user_id", operator: "=", conj: "AND", args: []any{123}},
+				{
+					queryType: QueryNested,
+					conj:      "OR",
+					nested: []where{
+						{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"inactive"}},
+						{
+							queryType: QueryNested,
+							conj:      "OR",
+							nested: []where{
+								{queryType: QueryBasic, column: "category", operator: "=", conj: "AND", args: []any{"basic"}},
+								{queryType: QueryRaw, expr: "price < ?", conj: "OR", args: []any{50}},
+							},
+						},
+						{queryType: QueryBasic, column: "region", operator: "IN", conj: "OR", args: []any{[]any{"south", "west"}}},
+					},
+				},
+			},
+		},
+		{
+			name:          "should not add an empty OR WHERE group",
+			initialWheres: []where{},
+			groupFn: func(qb QueryBuilder) {
+				// Do nothing
+			},
+			expectedWheres: []where{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.OrWhereGroup(tt.groupFn)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected OrWhereGroup() to return the same builder instance")
+		})
+	}
+}
+
 // -----------------
 // --- BENCHMARK ---
 // -----------------
@@ -1069,5 +1305,41 @@ func BenchmarkBuilder_OrWhereRaw(b *testing.B) {
 
 	for b.Loop() {
 		builder.OrWhereRaw(expression, args...)
+	}
+}
+
+func BenchmarkBuilder_WhereGroup(b *testing.B) {
+	builder := &builder{}
+	groupFn := func(qb QueryBuilder) {
+		qb.
+			Where("status", "=", "active").
+			OrWhere("status", "=", "pending").
+			WhereGroup(func(nestedQb QueryBuilder) {
+				nestedQb.
+					Where("category", "=", "premium").
+					WhereRaw("price > ?", 100)
+			})
+	}
+
+	for b.Loop() {
+		builder.WhereGroup(groupFn)
+	}
+}
+
+func BenchmarkBuilder_OrWhereGroup(b *testing.B) {
+	builder := &builder{}
+	groupFn := func(qb QueryBuilder) {
+		qb.
+			Where("age", ">", 18).
+			OrWhere("age", "<", 10).
+			WhereGroup(func(nestedQb QueryBuilder) {
+				nestedQb.
+					Where("country", "=", "US").
+					OrWhereRaw("zip_code LIKE ?", "90210%")
+			})
+	}
+
+	for b.Loop() {
+		builder.OrWhereGroup(groupFn)
 	}
 }
