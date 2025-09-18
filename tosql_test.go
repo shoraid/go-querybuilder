@@ -3,7 +3,6 @@ package goquerybuilder
 import (
 	"testing"
 
-	"github.com/shoraid/go-querybuilder/dialect"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -68,7 +67,7 @@ func TestBuilder_ToSQL_Select_Simple(t *testing.T) {
 
 			// Arrange
 			b := &builder{
-				dialect: dialect.PostgresDialect{}, // use Postgres for quoting
+				dialect: PostgresDialect{}, // use Postgres for quoting
 				action:  tt.action,
 				table:   tt.table,
 				columns: tt.columns,
@@ -186,7 +185,7 @@ func TestBuilder_ToSQL_Select_Where(t *testing.T) {
 
 			// Arrange
 			b := &builder{
-				dialect: dialect.PostgresDialect{},
+				dialect: PostgresDialect{},
 				action:  "select",
 				table:   tt.table,
 				wheres:  tt.wheres,
@@ -253,7 +252,7 @@ func TestBuilder_ToSQL_Select_OrderBy(t *testing.T) {
 
 			// Arrange
 			b := &builder{
-				dialect:  dialect.PostgresDialect{},
+				dialect:  PostgresDialect{},
 				action:   "select",
 				table:    tt.table,
 				orderBys: tt.orderBys,
@@ -325,7 +324,7 @@ func TestBuilder_ToSQL_Select_LimitOffset(t *testing.T) {
 
 			// Arrange
 			b := &builder{
-				dialect: dialect.PostgresDialect{},
+				dialect: PostgresDialect{},
 				action:  "select",
 				table:   tt.table,
 				limit:   tt.limit,
@@ -444,7 +443,7 @@ func TestBuilder_ToSQL_Select_Combined(t *testing.T) {
 
 			// Arrange
 			b := &builder{
-				dialect:  dialect.PostgresDialect{},
+				dialect:  PostgresDialect{},
 				action:   "select",
 				table:    tt.table,
 				columns:  tt.columns,

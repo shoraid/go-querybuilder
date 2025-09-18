@@ -1,7 +1,5 @@
 package goquerybuilder
 
-import "github.com/shoraid/go-querybuilder/dialect"
-
 type QueryBuilder interface {
 	// Core
 	Select(columns ...string) QueryBuilder
@@ -29,7 +27,7 @@ type QueryBuilder interface {
 	GetTable() string
 	GetColumns() []string
 	GetAction() string
-	GetDialect() dialect.Dialect
+	Dialect() Dialect
 	Args() []any
 	ArgsByIndexes(indexes ...int) []any
 	AddArgs(args ...any)
@@ -42,7 +40,7 @@ type condition struct {
 }
 
 type builder struct {
-	dialect  dialect.Dialect
+	dialect  Dialect
 	action   string
 	table    string
 	columns  []string
@@ -53,7 +51,7 @@ type builder struct {
 	args     []any
 }
 
-func New(d dialect.Dialect) QueryBuilder {
+func New(d Dialect) QueryBuilder {
 	return &builder{
 		dialect: d,
 		limit:   -1,
@@ -61,7 +59,7 @@ func New(d dialect.Dialect) QueryBuilder {
 	}
 }
 
-func (b *builder) GetDialect() dialect.Dialect {
+func (b *builder) Dialect() Dialect {
 	return b.dialect
 }
 

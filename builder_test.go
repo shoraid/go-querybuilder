@@ -3,7 +3,6 @@ package goquerybuilder
 import (
 	"testing"
 
-	"github.com/shoraid/go-querybuilder/dialect"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -12,11 +11,11 @@ func TestBuilder_New(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		dialect dialect.Dialect
+		dialect Dialect
 	}{
 		{
 			name:    "should create builder with Postgres dialect",
-			dialect: dialect.PostgresDialect{},
+			dialect: PostgresDialect{},
 		},
 	}
 
@@ -40,18 +39,18 @@ func TestBuilder_New(t *testing.T) {
 	}
 }
 
-func TestBuilder_GetDialect(t *testing.T) {
+func TestBuilder_Dialect(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name            string
-		dialect         dialect.Dialect
-		expectedDialect dialect.Dialect
+		dialect         Dialect
+		expectedDialect Dialect
 	}{
 		{
 			name:            "should return Postgres dialect",
-			dialect:         dialect.PostgresDialect{},
-			expectedDialect: dialect.PostgresDialect{},
+			dialect:         PostgresDialect{},
+			expectedDialect: PostgresDialect{},
 		},
 	}
 
@@ -63,7 +62,7 @@ func TestBuilder_GetDialect(t *testing.T) {
 			b := &builder{dialect: tt.dialect}
 
 			// Act
-			result := b.GetDialect()
+			result := b.Dialect()
 
 			// Assert
 			assert.Equal(t, tt.expectedDialect, result, "expected dialect to match")

@@ -3,7 +3,6 @@ package goquerybuilder
 import (
 	"testing"
 
-	"github.com/shoraid/go-querybuilder/dialect"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -37,7 +36,7 @@ func TestBuilder_Offset(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{dialect: dialect.PostgresDialect{}}
+			b := &builder{}
 
 			// Act
 			result := b.Offset(tt.offset)

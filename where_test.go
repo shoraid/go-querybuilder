@@ -3,7 +3,6 @@ package goquerybuilder
 import (
 	"testing"
 
-	"github.com/shoraid/go-querybuilder/dialect"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -96,7 +95,7 @@ func TestBuilder_Where(t *testing.T) {
 
 			// Arrange
 			b := &builder{
-				dialect: dialect.PostgresDialect{}, // Use Postgres for placeholder generation
+				dialect: PostgresDialect{}, // Use Postgres for placeholder generation
 				wheres:  tt.initialWheres,
 				args:    tt.expectedArgs[:len(tt.initialWheres)], // Initialize args based on initial wheres
 			}
@@ -190,7 +189,7 @@ func TestBuilder_OrWhere(t *testing.T) {
 
 			// Arrange
 			b := &builder{
-				dialect: dialect.PostgresDialect{}, // Use Postgres for placeholder generation
+				dialect: PostgresDialect{}, // Use Postgres for placeholder generation
 				wheres:  tt.initialWheres,
 				args:    tt.expectedArgs[:len(tt.initialWheres)], // Initialize args based on initial wheres
 			}

@@ -3,7 +3,6 @@ package goquerybuilder
 import (
 	"testing"
 
-	"github.com/shoraid/go-querybuilder/dialect"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,7 +23,7 @@ func TestBuilder_From(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{dialect: dialect.PostgresDialect{}}
+			b := &builder{}
 
 			// Act
 			result := b.From(tt.table)
@@ -95,7 +94,7 @@ func TestBuilder_FromSafe(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{dialect: dialect.PostgresDialect{}}
+			b := &builder{}
 
 			// Act
 			result, err := b.FromSafe(tt.userInput, tt.whitelist)

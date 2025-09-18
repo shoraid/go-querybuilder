@@ -3,7 +3,6 @@ package goquerybuilder
 import (
 	"testing"
 
-	"github.com/shoraid/go-querybuilder/dialect"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -60,7 +59,7 @@ func TestBuilder_OrderBy(t *testing.T) {
 
 			// Arrange
 			b := &builder{
-				dialect:  dialect.PostgresDialect{},
+				dialect:  PostgresDialect{},
 				orderBys: tt.initialOrderBys,
 			}
 
@@ -109,7 +108,7 @@ func TestBuilder_OrderByRaw(t *testing.T) {
 
 			// Arrange
 			b := &builder{
-				dialect:  dialect.PostgresDialect{},
+				dialect:  PostgresDialect{},
 				orderBys: tt.initialOrderBys,
 			}
 
@@ -199,7 +198,7 @@ func TestBuilder_OrderBySafe(t *testing.T) {
 
 			// Arrange
 			b := &builder{
-				dialect:  dialect.PostgresDialect{},
+				dialect:  PostgresDialect{},
 				orderBys: tt.initialOrderBys,
 			}
 

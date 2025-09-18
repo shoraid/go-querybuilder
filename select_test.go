@@ -3,7 +3,6 @@ package goquerybuilder
 import (
 	"testing"
 
-	"github.com/shoraid/go-querybuilder/dialect"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,7 +46,7 @@ func TestBuilder_Select(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{dialect: dialect.PostgresDialect{}}
+			b := &builder{}
 			// Pre-fill with some data to check reset behavior
 			b.columns = []string{"dummy"}
 
@@ -121,7 +120,7 @@ func TestBuilder_SelectSafe(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{dialect: dialect.PostgresDialect{}}
+			b := &builder{}
 
 			// Act
 			result, err := b.SelectSafe(tt.userInput, tt.whitelist)
@@ -182,7 +181,7 @@ func TestBuilder_AddSelect(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{dialect: dialect.PostgresDialect{}, columns: tt.initialColumns}
+			b := &builder{columns: tt.initialColumns}
 
 			// Act
 			result := b.AddSelect(tt.addColumn)
@@ -259,7 +258,7 @@ func TestBuilder_AddSelectSafe(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{dialect: dialect.PostgresDialect{}, columns: tt.initialColumns}
+			b := &builder{columns: tt.initialColumns}
 
 			// Act
 			result, err := b.AddSelectSafe(tt.userInput, tt.whitelist)

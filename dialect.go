@@ -1,4 +1,4 @@
-package dialect
+package goquerybuilder
 
 type Dialect interface {
 	Placeholder(n int) string
