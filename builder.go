@@ -15,9 +15,9 @@ type QueryBuilder interface {
 	OrWhere(column string, operator string, value any) QueryBuilder
 
 	// Order
-	OrderBy(column string, direction string) QueryBuilder
-	OrderByRaw(expr string) QueryBuilder
-	OrderBySafe(userInput string, dir string, whitelist map[string]string) (QueryBuilder, error)
+	OrderBy(column, direction string) QueryBuilder
+	OrderByRaw(expr string, args ...any) QueryBuilder
+	OrderBySafe(userInput, dir string, whitelist map[string]string) (QueryBuilder, error)
 
 	// Pagination
 	Limit(limit int) QueryBuilder
@@ -33,6 +33,21 @@ type QueryBuilder interface {
 	AddArgs(args ...any)
 }
 
+type QueryType string
+
+const (
+	QueryBasic QueryType = "Basic"
+	QueryRaw   QueryType = "Raw"
+)
+
+type orderBy struct {
+	queryType QueryType
+	column    string
+	dir       string
+	expr      string
+	args      []any
+}
+
 type condition struct {
 	conj       string
 	query      string
@@ -45,7 +60,7 @@ type builder struct {
 	table    string
 	columns  []string
 	wheres   []condition
-	orderBys []string
+	orderBys []orderBy
 	limit    int
 	offset   int
 	args     []any

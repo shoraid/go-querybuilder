@@ -5,19 +5,27 @@ import (
 	"strings"
 )
 
-func (b *builder) OrderBy(column string, direction string) QueryBuilder {
-	dir := strings.ToUpper(direction)
+func (b *builder) OrderBy(column, dir string) QueryBuilder {
+	dir = strings.ToUpper(dir)
 	if dir != "ASC" && dir != "DESC" {
 		dir = "ASC"
 	}
 
-	b.orderBys = append(b.orderBys, fmt.Sprintf("%s %s", b.dialect.QuoteIdentifier(column), dir))
+	b.orderBys = append(b.orderBys, orderBy{
+		queryType: QueryBasic,
+		column:    column,
+		dir:       dir,
+	})
 
 	return b
 }
 
-func (b *builder) OrderByRaw(expr string) QueryBuilder {
-	b.orderBys = append(b.orderBys, expr)
+func (b *builder) OrderByRaw(expr string, args ...any) QueryBuilder {
+	b.orderBys = append(b.orderBys, orderBy{
+		queryType: QueryRaw,
+		expr:      expr,
+		args:      args,
+	})
 
 	return b
 }
@@ -28,7 +36,8 @@ func (b *builder) OrderBySafe(userInput string, dir string, whitelist map[string
 		return nil, fmt.Errorf("invalid order by column: %s", userInput)
 	}
 
-	if strings.ToUpper(dir) != "ASC" && strings.ToUpper(dir) != "DESC" {
+	dir = strings.ToUpper(dir)
+	if dir != "ASC" && dir != "DESC" {
 		dir = "ASC"
 	}
 

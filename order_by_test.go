@@ -10,46 +10,50 @@ func TestBuilder_OrderBy(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name            string
-		initialOrderBys []string
-		column          string
-		direction       string
-		expectedSQL     []string
+		name             string
+		initialOrderBys  []orderBy
+		column           string
+		direction        string
+		expectedOrderBys []orderBy
 	}{
 		{
 			name:            "should add single ASC order by clause",
-			initialOrderBys: []string{},
+			initialOrderBys: []orderBy{},
 			column:          "id",
 			direction:       "asc",
-			expectedSQL:     []string{`"id" ASC`},
+			expectedOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "id", dir: "ASC"},
+			},
 		},
 		{
 			name:            "should add single DESC order by clause",
-			initialOrderBys: []string{},
+			initialOrderBys: []orderBy{},
 			column:          "name",
 			direction:       "DESC",
-			expectedSQL:     []string{`"name" DESC`},
+			expectedOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "name", dir: "DESC"},
+			},
 		},
 		{
 			name:            "should default to ASC for invalid direction",
-			initialOrderBys: []string{},
+			initialOrderBys: []orderBy{},
 			column:          "created_at",
 			direction:       "invalid",
-			expectedSQL:     []string{`"created_at" ASC`},
+			expectedOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "created_at", dir: "ASC"},
+			},
 		},
 		{
-			name:            "should handle multiple order by calls",
-			initialOrderBys: []string{`"id" ASC`},
-			column:          "email",
-			direction:       "ASC",
-			expectedSQL:     []string{`"id" ASC`, `"email" ASC`},
-		},
-		{
-			name:            "should quote column name correctly",
-			initialOrderBys: []string{},
-			column:          "user_id",
-			direction:       "DESC",
-			expectedSQL:     []string{`"user_id" DESC`},
+			name: "should handle multiple order by calls",
+			initialOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "id", dir: "ASC"},
+			},
+			column:    "email",
+			direction: "ASC",
+			expectedOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "id", dir: "ASC"},
+				{queryType: QueryBasic, column: "email", dir: "ASC"},
+			},
 		},
 	}
 
@@ -58,16 +62,13 @@ func TestBuilder_OrderBy(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{
-				dialect:  PostgresDialect{},
-				orderBys: tt.initialOrderBys,
-			}
+			b := &builder{orderBys: tt.initialOrderBys}
 
 			// Act
 			result := b.OrderBy(tt.column, tt.direction)
 
 			// Assert
-			assert.Contains(t, b.orderBys, tt.expectedSQL[len(tt.expectedSQL)-1], "expected order by clause to be added")
+			assert.Equal(t, tt.expectedOrderBys, b.orderBys, "expected order by clauses to be added")
 			assert.Equal(t, b, result, "expected OrderBy() to return the same builder instance")
 		})
 	}
@@ -77,28 +78,44 @@ func TestBuilder_OrderByRaw(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name            string
-		initialOrderBys []string
-		expression      string
-		expectedSQL     []string
+		name             string
+		initialOrderBys  []orderBy
+		expression       string
+		args             []any
+		expectedOrderBys []orderBy
+		expectedArgs     []any
 	}{
 		{
 			name:            "should add raw order by expression",
-			initialOrderBys: []string{},
+			initialOrderBys: []orderBy{},
 			expression:      "LENGTH(name) DESC",
-			expectedSQL:     []string{"LENGTH(name) DESC"},
+			args:            []any{},
+			expectedOrderBys: []orderBy{
+				{queryType: QueryRaw, expr: "LENGTH(name) DESC", args: []any{}},
+			},
+			expectedArgs: []any{},
 		},
 		{
-			name:            "should add another raw order by expression",
-			initialOrderBys: []string{"id ASC"},
-			expression:      "RANDOM()",
-			expectedSQL:     []string{"id ASC", "RANDOM()"},
+			name: "should add another raw order by expression",
+			initialOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "id", dir: "ASC"},
+			},
+			expression: "RANDOM()",
+			args:       []any{},
+			expectedOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "id", dir: "ASC"},
+				{queryType: QueryRaw, expr: "RANDOM()", args: []any{}},
+			},
+			expectedArgs: []any{},
 		},
 		{
-			name:            "should handle complex raw expression",
-			initialOrderBys: []string{},
-			expression:      "CASE WHEN status = 'active' THEN 1 ELSE 0 END DESC",
-			expectedSQL:     []string{"CASE WHEN status = 'active' THEN 1 ELSE 0 END DESC"},
+			name:       "should handle complex raw expression with multiple args",
+			expression: "CASE WHEN amount > ? THEN ? ELSE ? END DESC",
+			args:       []any{100, 1, 0},
+			expectedOrderBys: []orderBy{
+				{queryType: QueryRaw, expr: "CASE WHEN amount > ? THEN ? ELSE ? END DESC", args: []any{100, 1, 0}},
+			},
+			expectedArgs: []any{100, 1, 0},
 		},
 	}
 
@@ -107,16 +124,13 @@ func TestBuilder_OrderByRaw(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{
-				dialect:  PostgresDialect{},
-				orderBys: tt.initialOrderBys,
-			}
+			b := &builder{orderBys: tt.initialOrderBys}
 
 			// Act
-			result := b.OrderByRaw(tt.expression)
+			result := b.OrderByRaw(tt.expression, tt.args...)
 
 			// Assert
-			assert.Contains(t, b.orderBys, tt.expectedSQL[len(tt.expectedSQL)-1], "expected raw order by expression to be added")
+			assert.Equal(t, tt.expectedOrderBys, b.orderBys, "expected raw order by clauses to be added")
 			assert.Equal(t, b, result, "expected OrderByRaw() to return the same builder instance")
 		})
 	}
@@ -133,62 +147,84 @@ func TestBuilder_OrderBySafe(t *testing.T) {
 	}
 
 	tests := []struct {
-		name            string
-		initialOrderBys []string
-		userInput       string
-		dir             string
-		whitelist       map[string]string
-		expectedOrder   []string
-		expectedError   string
+		name             string
+		initialOrderBys  []orderBy
+		userInput        string
+		dir              string
+		whitelist        map[string]string
+		expectedOrderBys []orderBy
+		expectedError    string
 	}{
 		{
 			name:            "should add valid column and direction",
-			initialOrderBys: []string{},
+			initialOrderBys: []orderBy{},
 			userInput:       "id",
 			dir:             "asc",
 			whitelist:       whitelist,
-			expectedOrder:   []string{`"id" ASC`},
+			expectedOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "id", dir: "ASC"},
+			},
 		},
 		{
 			name:            "should add valid column with DESC direction",
-			initialOrderBys: []string{},
+			initialOrderBys: []orderBy{},
 			userInput:       "name",
 			dir:             "DESC",
 			whitelist:       whitelist,
-			expectedOrder:   []string{`"name" DESC`},
+			expectedOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "name", dir: "DESC"},
+			},
 		},
 		{
 			name:            "should default to ASC for invalid direction",
-			initialOrderBys: []string{},
+			initialOrderBys: []orderBy{},
 			userInput:       "created_at",
 			dir:             "invalid",
 			whitelist:       whitelist,
-			expectedOrder:   []string{`"created_at" ASC`},
+			expectedOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "created_at", dir: "ASC"},
+			},
 		},
 		{
 			name:            "should handle column with alias from whitelist",
-			initialOrderBys: []string{},
+			initialOrderBys: []orderBy{},
 			userInput:       "email",
 			dir:             "desc",
 			whitelist:       whitelist,
-			expectedOrder:   []string{`"u"."email" DESC`},
+			expectedOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "u.email", dir: "DESC"},
+			},
 		},
 		{
-			name:            "should handle multiple safe order by calls",
-			initialOrderBys: []string{`"id" DESC`},
-			userInput:       "name",
-			dir:             "ASC",
-			whitelist:       whitelist,
-			expectedOrder:   []string{`"id" DESC`, `"name" ASC`},
+			name: "should handle multiple safe order by calls",
+			initialOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "id", dir: "ASC"},
+			},
+			userInput: "name",
+			dir:       "ASC",
+			whitelist: whitelist,
+			expectedOrderBys: []orderBy{
+				{queryType: QueryBasic, column: "id", dir: "ASC"},
+				{queryType: QueryBasic, column: "name", dir: "ASC"},
+			},
 		},
 		{
-			name:            "should return error for invalid column",
-			initialOrderBys: []string{},
-			userInput:       "invalid_col",
-			dir:             "asc",
-			whitelist:       whitelist,
-			expectedOrder:   nil,
-			expectedError:   "invalid order by column: invalid_col",
+			name:             "should return error for invalid column",
+			initialOrderBys:  []orderBy{},
+			userInput:        "invalid_col",
+			dir:              "asc",
+			whitelist:        whitelist,
+			expectedOrderBys: []orderBy{}, // OrderBys should remain unchanged on error
+			expectedError:    "invalid order by column: invalid_col",
+		},
+		{
+			name:             "should return error for empty whitelist",
+			initialOrderBys:  []orderBy{},
+			userInput:        "id",
+			dir:              "asc",
+			whitelist:        map[string]string{},
+			expectedOrderBys: []orderBy{}, // OrderBys should remain unchanged on error
+			expectedError:    "invalid order by column: id",
 		},
 	}
 
@@ -197,10 +233,7 @@ func TestBuilder_OrderBySafe(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{
-				dialect:  PostgresDialect{},
-				orderBys: tt.initialOrderBys,
-			}
+			b := &builder{orderBys: tt.initialOrderBys}
 
 			// Act
 			result, err := b.OrderBySafe(tt.userInput, tt.dir, tt.whitelist)
@@ -208,15 +241,15 @@ func TestBuilder_OrderBySafe(t *testing.T) {
 			// Assert
 			if tt.expectedError != "" {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "error message should match")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to match")
 				assert.Nil(t, result, "expected nil builder on error")
-				assert.Empty(t, b.orderBys, "expected order to be empty on error")
+				assert.Equal(t, tt.expectedOrderBys, b.orderBys, "expected order bys to remain unchanged on error")
 				return
 			}
 
 			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedOrderBys, b.orderBys, "expected order by clauses to be updated correctly")
 			assert.Equal(t, b, result, "expected OrderBySafe() to return the same builder instance")
-			assert.Equal(t, tt.expectedOrder, b.orderBys, "expected order by clauses to be updated correctly")
 		})
 	}
 }
