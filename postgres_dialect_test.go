@@ -6,7 +6,47 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestPostgresDialect_Capabilities(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		expectedExcept    bool
+		expectedFullJoin  bool
+		expectedIntersect bool
+		expectedReturning bool
+	}{
+		{
+			name:              "should return correct capabilities for Postgres",
+			expectedExcept:    true,
+			expectedFullJoin:  true,
+			expectedIntersect: true,
+			expectedReturning: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			d := PostgresDialect{}
+
+			// Act
+			caps := d.Capabilities()
+
+			// Assert
+			assert.Equal(t, tt.expectedExcept, caps.SupportsExcept, "expected SupportsExcept to match")
+			assert.Equal(t, tt.expectedFullJoin, caps.SupportsFullJoin, "expected SupportsFullJoin to match")
+			assert.Equal(t, tt.expectedIntersect, caps.SupportsIntersect, "expected SupportsIntersect to match")
+			assert.Equal(t, tt.expectedReturning, caps.SupportsReturning, "expected SupportsReturning to match")
+		})
+	}
+}
+
 func TestPostgresDialect_Placeholder(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		n        int
@@ -36,6 +76,8 @@ func TestPostgresDialect_Placeholder(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			// Arrange
 			d := PostgresDialect{}
 
@@ -48,146 +90,9 @@ func TestPostgresDialect_Placeholder(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_QuoteIdentifier(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "should quote single identifier",
-			input:    "users",
-			expected: `"users"`,
-		},
-		{
-			name:     "should quote schema and table",
-			input:    "public.users",
-			expected: `"public"."users"`,
-		},
-		{
-			name:     "should quote table and column",
-			input:    "users.id",
-			expected: `"users"."id"`,
-		},
-		{
-			name:     "should quote multi-level identifier",
-			input:    "db1.public.users",
-			expected: `"db1"."public"."users"`,
-		},
-		{
-			name:     "should quote identifier with underscore",
-			input:    "user_profile",
-			expected: `"user_profile"`,
-		},
-		{
-			name:     "should quote identifier with number",
-			input:    "column1",
-			expected: `"column1"`,
-		},
-		{
-			name:     "should quote identifier with mixed case",
-			input:    "UserName",
-			expected: `"UserName"`,
-		},
-		{
-			name:     "should quote identifier with special char",
-			input:    "order-items",
-			expected: `"order-items"`,
-		},
-		{
-			name:     "should quote empty identifier",
-			input:    "",
-			expected: `""`,
-		},
-	}
+func TestPostgresDialect_WrapColumn(t *testing.T) {
+	t.Parallel()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Arrange
-			d := PostgresDialect{}
-
-			// Act
-			result := d.QuoteIdentifier(tt.input)
-
-			// Assert
-			assert.Equal(t, tt.expected, result, "expected quoted identifier to match")
-		})
-	}
-}
-
-func TestPostgresDialect_QuoteTableWithAlias(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "should quote simple table without alias",
-			input:    "users",
-			expected: `"users"`,
-		},
-		{
-			name:     "should quote schema-qualified table without alias",
-			input:    "public.users",
-			expected: `"public.users"`,
-		},
-		{
-			name:     "should quote table with alias",
-			input:    "users u",
-			expected: `"users" AS u`,
-		},
-		{
-			name:     "should quote table with alias containing number",
-			input:    "orders o1",
-			expected: `"orders" AS o1`,
-		},
-		{
-			name:     "should handle extra spaces between table and alias",
-			input:    "users     u",
-			expected: `"users" AS u`,
-		},
-		{
-			name:     "should quote table name with underscore",
-			input:    "user_profile up",
-			expected: `"user_profile" AS up`,
-		},
-		{
-			name:     "should quote table name with hyphen",
-			input:    "order-items oi",
-			expected: `"order-items" AS oi`,
-		},
-		{
-			name:     "should quote table name without alias but with mixed case",
-			input:    "UserTable",
-			expected: `"UserTable"`,
-		},
-		{
-			name:     "should quote table name with alias and mixed case",
-			input:    "UserTable ut",
-			expected: `"UserTable" AS ut`,
-		},
-		{
-			name:     "should quote empty string (edge case)",
-			input:    "",
-			expected: `""`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Arrange
-			d := PostgresDialect{}
-
-			// Act
-			result := d.QuoteTableWithAlias(tt.input)
-
-			// Assert
-			assert.Equal(t, tt.expected, result, "expected quoted table with alias to match")
-		})
-	}
-}
-
-func TestPostgresDialect_QuoteColumnWithAlias(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -252,11 +157,13 @@ func TestPostgresDialect_QuoteColumnWithAlias(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			// Arrange
 			d := PostgresDialect{}
 
 			// Act
-			result := d.QuoteColumnWithAlias(tt.input)
+			result := d.WrapColumn(tt.input)
 
 			// Assert
 			assert.Equal(t, tt.expected, result, "expected quoted column with alias to match")
@@ -264,36 +171,197 @@ func TestPostgresDialect_QuoteColumnWithAlias(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_Capabilities(t *testing.T) {
+func TestPostgresDialect_WrapIdentifier(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		name              string
-		expectedReturning bool
-		expectedFullJoin  bool
-		expectedIntersect bool
-		expectedExcept    bool
+		name     string
+		input    string
+		expected string
 	}{
 		{
-			name:              "should return correct capabilities for Postgres",
-			expectedReturning: true,
-			expectedFullJoin:  true,
-			expectedIntersect: true,
-			expectedExcept:    true,
+			name:     "should quote single identifier",
+			input:    "users",
+			expected: `"users"`,
+		},
+		{
+			name:     "should quote schema and table",
+			input:    "public.users",
+			expected: `"public"."users"`,
+		},
+		{
+			name:     "should quote table and column",
+			input:    "users.id",
+			expected: `"users"."id"`,
+		},
+		{
+			name:     "should quote multi-level identifier",
+			input:    "db1.public.users",
+			expected: `"db1"."public"."users"`,
+		},
+		{
+			name:     "should quote identifier with underscore",
+			input:    "user_profile",
+			expected: `"user_profile"`,
+		},
+		{
+			name:     "should quote identifier with number",
+			input:    "column1",
+			expected: `"column1"`,
+		},
+		{
+			name:     "should quote identifier with mixed case",
+			input:    "UserName",
+			expected: `"UserName"`,
+		},
+		{
+			name:     "should quote identifier with special char",
+			input:    "order-items",
+			expected: `"order-items"`,
+		},
+		{
+			name:     "should quote empty identifier",
+			input:    "",
+			expected: `""`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			// Arrange
 			d := PostgresDialect{}
 
 			// Act
-			caps := d.Capabilities()
+			result := d.WrapIdentifier(tt.input)
 
 			// Assert
-			assert.Equal(t, tt.expectedReturning, caps.SupportsReturning, "expected SupportsReturning to match")
-			assert.Equal(t, tt.expectedFullJoin, caps.SupportsFullJoin, "expected SupportsFullJoin to match")
-			assert.Equal(t, tt.expectedIntersect, caps.SupportsIntersect, "expected SupportsIntersect to match")
-			assert.Equal(t, tt.expectedExcept, caps.SupportsExcept, "expected SupportsExcept to match")
+			assert.Equal(t, tt.expected, result, "expected quoted identifier to match")
 		})
+	}
+}
+
+func TestPostgresDialect_WrapTable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "should quote simple table without alias",
+			input:    "users",
+			expected: `"users"`,
+		},
+		{
+			name:     "should quote schema-qualified table without alias",
+			input:    "public.users",
+			expected: `"public.users"`,
+		},
+		{
+			name:     "should quote table with alias",
+			input:    "users u",
+			expected: `"users" AS u`,
+		},
+		{
+			name:     "should quote table with alias containing number",
+			input:    "orders o1",
+			expected: `"orders" AS o1`,
+		},
+		{
+			name:     "should handle extra spaces between table and alias",
+			input:    "users     u",
+			expected: `"users" AS u`,
+		},
+		{
+			name:     "should quote table name with underscore",
+			input:    "user_profile up",
+			expected: `"user_profile" AS up`,
+		},
+		{
+			name:     "should quote table name with hyphen",
+			input:    "order-items oi",
+			expected: `"order-items" AS oi`,
+		},
+		{
+			name:     "should quote table name without alias but with mixed case",
+			input:    "UserTable",
+			expected: `"UserTable"`,
+		},
+		{
+			name:     "should quote table name with alias and mixed case",
+			input:    "UserTable ut",
+			expected: `"UserTable" AS ut`,
+		},
+		{
+			name:     "should quote empty string (edge case)",
+			input:    "",
+			expected: `""`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			d := PostgresDialect{}
+
+			// Act
+			result := d.WrapTable(tt.input)
+
+			// Assert
+			assert.Equal(t, tt.expected, result, "expected quoted table with alias to match")
+		})
+	}
+}
+
+// -----------------
+// --- BENCHMARK ---
+// -----------------
+
+func BenchmarkPostgresDialect_Capabilities(b *testing.B) {
+	d := PostgresDialect{}
+
+	for b.Loop() {
+		d.Capabilities()
+	}
+}
+
+func BenchmarkPostgresDialect_Placeholder(b *testing.B) {
+	d := PostgresDialect{}
+	n := 10
+
+	for b.Loop() {
+		d.Placeholder(n)
+	}
+}
+
+func BenchmarkPostgresDialect_WrapColumn(b *testing.B) {
+	d := PostgresDialect{}
+	column := "users.id AS user_id"
+
+	for b.Loop() {
+		d.WrapColumn(column)
+	}
+}
+
+func BenchmarkPostgresDialect_WrapIdentifier(b *testing.B) {
+	d := PostgresDialect{}
+	identifier := "public.users.id"
+
+	for b.Loop() {
+		d.WrapIdentifier(identifier)
+	}
+}
+
+func BenchmarkPostgresDialect_WrapTable(b *testing.B) {
+	d := PostgresDialect{}
+	table := "users u"
+
+	for b.Loop() {
+		d.WrapTable(table)
 	}
 }

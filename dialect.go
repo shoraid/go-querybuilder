@@ -1,16 +1,16 @@
 package goquerybuilder
 
 type Dialect interface {
-	Placeholder(n int) string
-	QuoteIdentifier(identifier string) string
-	QuoteTableWithAlias(expr string) string
-	QuoteColumnWithAlias(expr string) string
 	Capabilities() DialectCapabilities
+	Placeholder(n int) string
+	WrapColumn(expr string) string
+	WrapIdentifier(identifier string) string
+	WrapTable(expr string) string
 }
 
 type DialectCapabilities struct {
-	SupportsReturning bool
+	SupportsExcept    bool
 	SupportsFullJoin  bool
 	SupportsIntersect bool
-	SupportsExcept    bool
+	SupportsReturning bool
 }
