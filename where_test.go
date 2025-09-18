@@ -11,81 +11,54 @@ func TestBuilder_Where(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		initialWheres  []condition
+		initialWheres  []where
 		column         string
 		operator       string
 		value          any
-		expectedWheres []condition
-		expectedArgs   []any
+		expectedWheres []where
 	}{
 		{
 			name:          "should add a single WHERE condition",
-			initialWheres: []condition{},
+			initialWheres: []where{},
 			column:        "id",
 			operator:      "=",
 			value:         1,
-			expectedWheres: []condition{
-				{conj: "AND", query: `"id" = $1`, argIndexes: []int{0}},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
 			},
-			expectedArgs: []any{1},
 		},
 		{
 			name: "should add a second WHERE condition with AND",
-			initialWheres: []condition{
-				{conj: "AND", query: `"id" = $1`, argIndexes: []int{0}},
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
 			},
 			column:   "name",
 			operator: "=",
 			value:    "John",
-			expectedWheres: []condition{
-				{conj: "AND", query: `"id" = $1`, argIndexes: []int{0}},
-				{conj: "AND", query: `"name" = $2`, argIndexes: []int{1}},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, column: "name", operator: "=", conj: "AND", args: []any{"John"}},
 			},
-			expectedArgs: []any{1, "John"},
 		},
 		{
 			name:          "should handle different operators",
-			initialWheres: []condition{},
+			initialWheres: []where{},
 			column:        "age",
 			operator:      ">",
 			value:         18,
-			expectedWheres: []condition{
-				{conj: "AND", query: `"age" > $1`, argIndexes: []int{0}},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "age", operator: ">", conj: "AND", args: []any{18}},
 			},
-			expectedArgs: []any{18},
-		},
-		{
-			name:          "should quote column name correctly",
-			initialWheres: []condition{},
-			column:        "user_name",
-			operator:      "LIKE",
-			value:         "test%",
-			expectedWheres: []condition{
-				{conj: "AND", query: `"user_name" LIKE $1`, argIndexes: []int{0}},
-			},
-			expectedArgs: []any{"test%"},
-		},
-		{
-			name:          "should default operator to '=' for invalid operator",
-			initialWheres: []condition{},
-			column:        "status",
-			operator:      "UNKNOWN",
-			value:         "active",
-			expectedWheres: []condition{
-				{conj: "AND", query: `"status" = $1`, argIndexes: []int{0}},
-			},
-			expectedArgs: []any{"active"},
 		},
 		{
 			name:          "should handle IN operator",
-			initialWheres: []condition{},
+			initialWheres: []where{},
 			column:        "category",
 			operator:      "IN",
 			value:         []string{"A", "B"},
-			expectedWheres: []condition{
-				{conj: "AND", query: `"category" IN $1`, argIndexes: []int{0}},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "category", operator: "IN", conj: "AND", args: []any{[]string{"A", "B"}}},
 			},
-			expectedArgs: []any{[]string{"A", "B"}},
 		},
 	}
 
@@ -94,18 +67,13 @@ func TestBuilder_Where(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{
-				dialect: PostgresDialect{}, // Use Postgres for placeholder generation
-				wheres:  tt.initialWheres,
-				args:    tt.expectedArgs[:len(tt.initialWheres)], // Initialize args based on initial wheres
-			}
+			b := &builder{wheres: tt.initialWheres}
 
 			// Act
 			result := b.Where(tt.column, tt.operator, tt.value)
 
 			// Assert
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
-			assert.Equal(t, tt.expectedArgs, b.args, "expected args to be updated correctly")
 			assert.Equal(t, b, result, "expected Where() to return the same builder instance")
 		})
 	}
@@ -116,70 +84,54 @@ func TestBuilder_OrWhere(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		initialWheres  []condition
+		initialWheres  []where
 		column         string
 		operator       string
 		value          any
-		expectedWheres []condition
-		expectedArgs   []any
+		expectedWheres []where
 	}{
 		{
 			name:          "should add a single OR WHERE condition",
-			initialWheres: []condition{},
+			initialWheres: []where{},
 			column:        "id",
 			operator:      "=",
 			value:         1,
-			expectedWheres: []condition{
-				{conj: "OR", query: `"id" = $1`, argIndexes: []int{0}},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "OR", args: []any{1}},
 			},
-			expectedArgs: []any{1},
 		},
 		{
 			name: "should add an OR WHERE condition after an AND condition",
-			initialWheres: []condition{
-				{conj: "AND", query: `"id" = $1`, argIndexes: []int{0}},
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
 			},
 			column:   "name",
 			operator: "=",
 			value:    "John",
-			expectedWheres: []condition{
-				{conj: "AND", query: `"id" = $1`, argIndexes: []int{0}},
-				{conj: "OR", query: `"name" = $2`, argIndexes: []int{1}},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, column: "name", operator: "=", conj: "OR", args: []any{"John"}},
 			},
-			expectedArgs: []any{1, "John"},
 		},
 		{
 			name:          "should handle different operators with OR",
-			initialWheres: []condition{},
+			initialWheres: []where{},
 			column:        "age",
 			operator:      "<",
 			value:         18,
-			expectedWheres: []condition{
-				{conj: "OR", query: `"age" < $1`, argIndexes: []int{0}},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "age", operator: "<", conj: "OR", args: []any{18}},
 			},
-			expectedArgs: []any{18},
-		},
-		{
-			name:          "should default operator to '=' for invalid operator with OR",
-			initialWheres: []condition{},
-			column:        "status",
-			operator:      "UNKNOWN",
-			value:         "inactive",
-			expectedWheres: []condition{
-				{conj: "OR", query: `"status" = $1`, argIndexes: []int{0}},
-			},
-			expectedArgs: []any{"inactive"},
 		},
 		{
 			name:          "should handle IN operator with OR",
-			initialWheres: []condition{},
+			initialWheres: []where{},
 			column:        "category",
 			operator:      "NOT IN",
 			value:         []string{"A", "B"},
-			expectedWheres: []condition{
-				{conj: "OR", query: `"category" NOT IN $1`, argIndexes: []int{0}},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "category", operator: "NOT IN", conj: "OR", args: []any{[]string{"A", "B"}}},
 			},
-			expectedArgs: []any{[]string{"A", "B"}},
 		},
 	}
 
@@ -188,19 +140,40 @@ func TestBuilder_OrWhere(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{
-				dialect: PostgresDialect{}, // Use Postgres for placeholder generation
-				wheres:  tt.initialWheres,
-				args:    tt.expectedArgs[:len(tt.initialWheres)], // Initialize args based on initial wheres
-			}
+			b := &builder{wheres: tt.initialWheres}
 
 			// Act
 			result := b.OrWhere(tt.column, tt.operator, tt.value)
 
 			// Assert
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
-			assert.Equal(t, tt.expectedArgs, b.args, "expected args to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhere() to return the same builder instance")
 		})
+	}
+}
+
+// -----------------
+// --- BENCHMARK ---
+// -----------------
+
+func BenchmarkBuilder_Where(b *testing.B) {
+	builder := &builder{}
+	column := "id"
+	operator := "="
+	value := 1
+
+	for b.Loop() {
+		builder.Where(column, operator, value)
+	}
+}
+
+func BenchmarkBuilder_OrWhere(b *testing.B) {
+	builder := &builder{}
+	column := "status"
+	operator := "="
+	value := "active"
+
+	for b.Loop() {
+		builder.OrWhere(column, operator, value)
 	}
 }

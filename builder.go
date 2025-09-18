@@ -58,10 +58,13 @@ type orderBy struct {
 	args      []any
 }
 
-type condition struct {
-	conj       string
-	query      string
-	argIndexes []int
+type where struct {
+	queryType QueryType
+	column    string
+	operator  string
+	conj      string
+	expr      string
+	args      []any
 }
 
 type builder struct {
@@ -69,7 +72,7 @@ type builder struct {
 	action   string
 	table    string
 	columns  []column
-	wheres   []condition
+	wheres   []where
 	orderBys []orderBy
 	limit    int
 	offset   int
