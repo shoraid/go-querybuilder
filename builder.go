@@ -17,6 +17,24 @@ type QueryBuilder interface {
 	Where(column string, operator string, value any) QueryBuilder
 	OrWhere(column string, operator string, value any) QueryBuilder
 
+	WhereBetween(column string, from, to any) QueryBuilder
+	OrWhereBetween(column string, from, to any) QueryBuilder
+	WhereNotBetween(column string, from, to any) QueryBuilder
+	OrWhereNotBetween(column string, from, to any) QueryBuilder
+
+	WhereIn(column string, values []any) QueryBuilder
+	OrWhereIn(column string, values []any) QueryBuilder
+	WhereNotIn(column string, values []any) QueryBuilder
+	OrWhereNotIn(column string, values []any) QueryBuilder
+
+	WhereNull(column string) QueryBuilder
+	OrWhereNull(column string) QueryBuilder
+	WhereNotNull(column string) QueryBuilder
+	OrWhereNotNull(column string) QueryBuilder
+
+	WhereRaw(expr string, args ...any) QueryBuilder
+	OrWhereRaw(expr string, args ...any) QueryBuilder
+
 	// Order By
 	OrderBy(column, direction string) QueryBuilder
 	OrderByRaw(expr string, args ...any) QueryBuilder
@@ -39,8 +57,11 @@ type QueryBuilder interface {
 type QueryType string
 
 const (
-	QueryBasic QueryType = "Basic"
-	QueryRaw   QueryType = "Raw"
+	QueryBasic   QueryType = "Basic"
+	QueryBetween QueryType = "Between"
+	QueryNested  QueryType = "Nested"
+	QueryNull    QueryType = "Null"
+	QueryRaw     QueryType = "Raw"
 )
 
 type column struct {

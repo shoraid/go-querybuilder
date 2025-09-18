@@ -152,6 +152,760 @@ func TestBuilder_OrWhere(t *testing.T) {
 	}
 }
 
+func TestBuilder_WhereBetween(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		from           any
+		to             any
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single WHERE BETWEEN condition",
+			initialWheres: []where{},
+			column:        "age",
+			from:          18,
+			to:            30,
+			expectedWheres: []where{
+				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "AND", args: []any{18, 30}},
+			},
+		},
+		{
+			name: "should add a second WHERE BETWEEN condition with AND",
+			initialWheres: []where{
+				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "created_at",
+			from:   "2023-01-01",
+			to:     "2023-12-31",
+			expectedWheres: []where{
+				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, column: "created_at", operator: "BETWEEN", conj: "AND", args: []any{"2023-01-01", "2023-12-31"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.WhereBetween(tt.column, tt.from, tt.to)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected WhereBetween() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereBetween(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		from           any
+		to             any
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single OR WHERE BETWEEN condition",
+			initialWheres: []where{},
+			column:        "age",
+			from:          18,
+			to:            30,
+			expectedWheres: []where{
+				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "OR", args: []any{18, 30}},
+			},
+		},
+		{
+			name: "should add a second OR WHERE BETWEEN condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "created_at",
+			from:   "2023-01-01",
+			to:     "2023-12-31",
+			expectedWheres: []where{
+				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, column: "created_at", operator: "BETWEEN", conj: "OR", args: []any{"2023-01-01", "2023-12-31"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.OrWhereBetween(tt.column, tt.from, tt.to)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected OrWhereBetween() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_WhereNotBetween(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		from           any
+		to             any
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single WHERE NOT BETWEEN condition",
+			initialWheres: []where{},
+			column:        "age",
+			from:          18,
+			to:            30,
+			expectedWheres: []where{
+				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "AND", args: []any{18, 30}},
+			},
+		},
+		{
+			name: "should add a second WHERE NOT BETWEEN condition with AND",
+			initialWheres: []where{
+				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "created_at",
+			from:   "2023-01-01",
+			to:     "2023-12-31",
+			expectedWheres: []where{
+				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, column: "created_at", operator: "NOT BETWEEN", conj: "AND", args: []any{"2023-01-01", "2023-12-31"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.WhereNotBetween(tt.column, tt.from, tt.to)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected WhereNotBetween() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereNotBetween(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		from           any
+		to             any
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single OR WHERE NOT BETWEEN condition",
+			initialWheres: []where{},
+			column:        "age",
+			from:          18,
+			to:            30,
+			expectedWheres: []where{
+				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "OR", args: []any{18, 30}},
+			},
+		},
+		{
+			name: "should add a second OR WHERE NOT BETWEEN condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "created_at",
+			from:   "2023-01-01",
+			to:     "2023-12-31",
+			expectedWheres: []where{
+				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, column: "created_at", operator: "NOT BETWEEN", conj: "OR", args: []any{"2023-01-01", "2023-12-31"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.OrWhereNotBetween(tt.column, tt.from, tt.to)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected OrWhereNotBetween() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_WhereIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		values         []any
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single WHERE IN condition",
+			initialWheres: []where{},
+			column:        "status",
+			values:        []any{"active", "pending"},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "status", operator: "IN", conj: "AND", args: []any{[]any{"active", "pending"}}},
+			},
+		},
+		{
+			name: "should add a second WHERE IN condition with AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "category",
+			values: []any{"electronics", "books"},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, column: "category", operator: "IN", conj: "AND", args: []any{[]any{"electronics", "books"}}},
+			},
+		},
+		{
+			name:          "should handle empty values slice",
+			initialWheres: []where{},
+			column:        "id",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "IN", conj: "AND", args: []any{[]any{}}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.WhereIn(tt.column, tt.values)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected WhereIn() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		values         []any
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single OR WHERE IN condition",
+			initialWheres: []where{},
+			column:        "status",
+			values:        []any{"active", "pending"},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "status", operator: "IN", conj: "OR", args: []any{[]any{"active", "pending"}}},
+			},
+		},
+		{
+			name: "should add a second OR WHERE IN condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "category",
+			values: []any{"electronics", "books"},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, column: "category", operator: "IN", conj: "OR", args: []any{[]any{"electronics", "books"}}},
+			},
+		},
+		{
+			name:          "should handle empty values slice with OR",
+			initialWheres: []where{},
+			column:        "id",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "IN", conj: "OR", args: []any{[]any{}}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.OrWhereIn(tt.column, tt.values)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected OrWhereIn() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_WhereNotIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		values         []any
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single WHERE NOT IN condition",
+			initialWheres: []where{},
+			column:        "status",
+			values:        []any{"deleted", "archived"},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "status", operator: "NOT IN", conj: "AND", args: []any{[]any{"deleted", "archived"}}},
+			},
+		},
+		{
+			name: "should add a second WHERE NOT IN condition with AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "category",
+			values: []any{"electronics", "books"},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, column: "category", operator: "NOT IN", conj: "AND", args: []any{[]any{"electronics", "books"}}},
+			},
+		},
+		{
+			name:          "should handle empty values slice",
+			initialWheres: []where{},
+			column:        "id",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "NOT IN", conj: "AND", args: []any{[]any{}}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.WhereNotIn(tt.column, tt.values)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected WhereNotIn() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereNotIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		values         []any
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single OR WHERE NOT IN condition",
+			initialWheres: []where{},
+			column:        "status",
+			values:        []any{"deleted", "archived"},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "status", operator: "NOT IN", conj: "OR", args: []any{[]any{"deleted", "archived"}}},
+			},
+		},
+		{
+			name: "should add a second OR WHERE NOT IN condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "category",
+			values: []any{"electronics", "books"},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, column: "category", operator: "NOT IN", conj: "OR", args: []any{[]any{"electronics", "books"}}},
+			},
+		},
+		{
+			name:          "should handle empty values slice with OR",
+			initialWheres: []where{},
+			column:        "id",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "NOT IN", conj: "OR", args: []any{[]any{}}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.OrWhereNotIn(tt.column, tt.values)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected OrWhereNotIn() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_WhereNull(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single WHERE NULL condition",
+			initialWheres: []where{},
+			column:        "deleted_at",
+			expectedWheres: []where{
+				{queryType: QueryNull, column: "deleted_at", operator: "IS NULL", conj: "AND", args: []any{}},
+			},
+		},
+		{
+			name: "should add a second WHERE NULL condition with AND",
+			initialWheres: []where{
+				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "email_verified_at",
+			expectedWheres: []where{
+				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, column: "email_verified_at", operator: "IS NULL", conj: "AND", args: []any{}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.WhereNull(tt.column)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected WhereNull() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereNull(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single OR WHERE NULL condition",
+			initialWheres: []where{},
+			column:        "deleted_at",
+			expectedWheres: []where{
+				{queryType: QueryNull, column: "deleted_at", operator: "IS NULL", conj: "OR", args: []any{}},
+			},
+		},
+		{
+			name: "should add a second OR WHERE NULL condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "email_verified_at",
+			expectedWheres: []where{
+				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, column: "email_verified_at", operator: "IS NULL", conj: "OR", args: []any{}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.OrWhereNull(tt.column)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected OrWhereNull() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_WhereNotNull(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single WHERE NOT NULL condition",
+			initialWheres: []where{},
+			column:        "deleted_at",
+			expectedWheres: []where{
+				{queryType: QueryNull, column: "deleted_at", operator: "IS NOT NULL", conj: "AND", args: []any{}},
+			},
+		},
+		{
+			name: "should add a second WHERE NOT NULL condition with AND",
+			initialWheres: []where{
+				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "email_verified_at",
+			expectedWheres: []where{
+				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, column: "email_verified_at", operator: "IS NOT NULL", conj: "AND", args: []any{}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.WhereNotNull(tt.column)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected WhereNotNull() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereNotNull(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single OR WHERE NOT NULL condition",
+			initialWheres: []where{},
+			column:        "deleted_at",
+			expectedWheres: []where{
+				{queryType: QueryNull, column: "deleted_at", operator: "IS NOT NULL", conj: "OR", args: []any{}},
+			},
+		},
+		{
+			name: "should add a second OR WHERE NOT NULL condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column: "email_verified_at",
+			expectedWheres: []where{
+				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, column: "email_verified_at", operator: "IS NOT NULL", conj: "OR", args: []any{}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.OrWhereNotNull(tt.column)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected OrWhereNotNull() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_WhereRaw(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		expression     string
+		args           []any
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single WHERE RAW condition",
+			initialWheres: []where{},
+			expression:    "id = ? AND name = ?",
+			args:          []any{1, "John"},
+			expectedWheres: []where{
+				{queryType: QueryRaw, expr: "id = ? AND name = ?", conj: "AND", args: []any{1, "John"}},
+			},
+		},
+		{
+			name: "should add a second WHERE RAW condition with AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+			},
+			expression: "created_at > NOW() - INTERVAL '1 day'",
+			args:       []any{},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+				{queryType: QueryRaw, expr: "created_at > NOW() - INTERVAL '1 day'", conj: "AND", args: []any{}},
+			},
+		},
+		{
+			name:          "should handle raw expression with no arguments",
+			initialWheres: []where{},
+			expression:    "column_a = column_b",
+			args:          []any{},
+			expectedWheres: []where{
+				{queryType: QueryRaw, expr: "column_a = column_b", conj: "AND", args: []any{}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.WhereRaw(tt.expression, tt.args...)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected WhereRaw() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereRaw(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		expression     string
+		args           []any
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single OR WHERE RAW condition",
+			initialWheres: []where{},
+			expression:    "id = ? OR name = ?",
+			args:          []any{1, "John"},
+			expectedWheres: []where{
+				{queryType: QueryRaw, expr: "id = ? OR name = ?", conj: "OR", args: []any{1, "John"}},
+			},
+		},
+		{
+			name: "should add a second OR WHERE RAW condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+			},
+			expression: "created_at < NOW() - INTERVAL '1 month'",
+			args:       []any{},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+				{queryType: QueryRaw, expr: "created_at < NOW() - INTERVAL '1 month'", conj: "OR", args: []any{}},
+			},
+		},
+		{
+			name:          "should handle raw expression with no arguments with OR",
+			initialWheres: []where{},
+			expression:    "column_c != column_d",
+			args:          []any{},
+			expectedWheres: []where{
+				{queryType: QueryRaw, expr: "column_c != column_d", conj: "OR", args: []any{}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.OrWhereRaw(tt.expression, tt.args...)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected OrWhereRaw() to return the same builder instance")
+		})
+	}
+}
+
 // -----------------
 // --- BENCHMARK ---
 // -----------------
@@ -175,5 +929,145 @@ func BenchmarkBuilder_OrWhere(b *testing.B) {
 
 	for b.Loop() {
 		builder.OrWhere(column, operator, value)
+	}
+}
+
+func BenchmarkBuilder_WhereBetween(b *testing.B) {
+	builder := &builder{}
+	column := "created_at"
+	from := "2023-01-01"
+	to := "2023-12-31"
+
+	for b.Loop() {
+		builder.WhereBetween(column, from, to)
+	}
+}
+
+func BenchmarkBuilder_OrWhereBetween(b *testing.B) {
+	builder := &builder{}
+	column := "updated_at"
+	from := "2023-01-01"
+	to := "2023-12-31"
+
+	for b.Loop() {
+		builder.OrWhereBetween(column, from, to)
+	}
+}
+
+func BenchmarkBuilder_WhereNotBetween(b *testing.B) {
+	builder := &builder{}
+	column := "age"
+	from := 18
+	to := 65
+
+	for b.Loop() {
+		builder.WhereNotBetween(column, from, to)
+	}
+}
+
+func BenchmarkBuilder_OrWhereNotBetween(b *testing.B) {
+	builder := &builder{}
+	column := "price"
+	from := 100
+	to := 500
+
+	for b.Loop() {
+		builder.OrWhereNotBetween(column, from, to)
+	}
+}
+
+func BenchmarkBuilder_WhereIn(b *testing.B) {
+	builder := &builder{}
+	column := "category"
+	values := []any{"electronics", "books", "clothing"}
+
+	for b.Loop() {
+		builder.WhereIn(column, values)
+	}
+}
+
+func BenchmarkBuilder_OrWhereIn(b *testing.B) {
+	builder := &builder{}
+	column := "tag"
+	values := []any{"new", "featured", "sale"}
+
+	for b.Loop() {
+		builder.OrWhereIn(column, values)
+	}
+}
+
+func BenchmarkBuilder_WhereNotIn(b *testing.B) {
+	builder := &builder{}
+	column := "status"
+	values := []any{"deleted", "archived"}
+
+	for b.Loop() {
+		builder.WhereNotIn(column, values)
+	}
+}
+
+func BenchmarkBuilder_OrWhereNotIn(b *testing.B) {
+	builder := &builder{}
+	column := "country"
+	values := []any{"US", "CA", "MX"}
+
+	for b.Loop() {
+		builder.OrWhereNotIn(column, values)
+	}
+}
+
+func BenchmarkBuilder_WhereNull(b *testing.B) {
+	builder := &builder{}
+	column := "deleted_at"
+
+	for b.Loop() {
+		builder.WhereNull(column)
+	}
+}
+
+func BenchmarkBuilder_OrWhereNull(b *testing.B) {
+	builder := &builder{}
+	column := "email_verified_at"
+
+	for b.Loop() {
+		builder.OrWhereNull(column)
+	}
+}
+
+func BenchmarkBuilder_WhereNotNull(b *testing.B) {
+	builder := &builder{}
+	column := "updated_at"
+
+	for b.Loop() {
+		builder.WhereNotNull(column)
+	}
+}
+
+func BenchmarkBuilder_OrWhereNotNull(b *testing.B) {
+	builder := &builder{}
+	column := "last_login_at"
+
+	for b.Loop() {
+		builder.OrWhereNotNull(column)
+	}
+}
+
+func BenchmarkBuilder_WhereRaw(b *testing.B) {
+	builder := &builder{}
+	expression := "id = ? AND name = ?"
+	args := []any{1, "John"}
+
+	for b.Loop() {
+		builder.WhereRaw(expression, args...)
+	}
+}
+
+func BenchmarkBuilder_OrWhereRaw(b *testing.B) {
+	builder := &builder{}
+	expression := "created_at < NOW() - INTERVAL '1 month'"
+	args := []any{}
+
+	for b.Loop() {
+		builder.OrWhereRaw(expression, args...)
 	}
 }
