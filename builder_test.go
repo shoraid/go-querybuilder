@@ -147,21 +147,42 @@ func TestBuilder_GetColumns(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		columns         []string
+		initialColumns  []column
 		expectedColumns []string
 	}{
 		{
-			name:            "should return columns",
-			columns:         []string{"id", "name"},
+			name: "should return basic columns",
+			initialColumns: []column{
+				{queryType: QueryBasic, name: "id"},
+				{queryType: QueryBasic, name: "name"},
+			},
 			expectedColumns: []string{"id", "name"},
 		},
 		{
-			name:            "should return empty columns",
-			columns:         []string{},
+			name: "should return raw columns (expressions)",
+			initialColumns: []column{
+				{queryType: QueryRaw, expr: "COUNT(id) AS total"},
+				{queryType: QueryRaw, expr: "MAX(created_at)"},
+			},
+			expectedColumns: []string{"COUNT(id) AS total", "MAX(created_at)"},
+		},
+		{
+			name: "should return mixed basic and raw columns",
+			initialColumns: []column{
+				{queryType: QueryBasic, name: "id"},
+				{queryType: QueryRaw, expr: "COUNT(id) AS total"},
+				{queryType: QueryBasic, name: "name"},
+			},
+			expectedColumns: []string{"id", "COUNT(id) AS total", "name"},
+		},
+		{
+			name:            "should return empty slice for empty columns",
+			initialColumns:  []column{},
 			expectedColumns: []string{},
-		}, {
-			name:            "should return nil columns",
-			columns:         nil,
+		},
+		{
+			name:            "should return nil for nil columns",
+			initialColumns:  nil,
 			expectedColumns: nil,
 		},
 	}
@@ -171,7 +192,7 @@ func TestBuilder_GetColumns(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{columns: tt.columns}
+			b := &builder{columns: tt.initialColumns}
 
 			// Act
 			result := b.GetColumns()
@@ -181,6 +202,46 @@ func TestBuilder_GetColumns(t *testing.T) {
 		})
 	}
 }
+
+// func TestBuilder_GetColumns(t *testing.T) {
+// 	t.Parallel()
+
+// 	tests := []struct {
+// 		name            string
+// 		columns         []string
+// 		expectedColumns []string
+// 	}{
+// 		{
+// 			name:            "should return columns",
+// 			columns:         []string{"id", "name"},
+// 			expectedColumns: []string{"id", "name"},
+// 		},
+// 		{
+// 			name:            "should return empty columns",
+// 			columns:         []string{},
+// 			expectedColumns: []string{},
+// 		}, {
+// 			name:            "should return nil columns",
+// 			columns:         nil,
+// 			expectedColumns: nil,
+// 		},
+// 	}
+
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			t.Parallel()
+
+// 			// Arrange
+// 			b := &builder{columns: tt.columns}
+
+// 			// Act
+// 			result := b.GetColumns()
+
+// 			// Assert
+// 			assert.Equal(t, tt.expectedColumns, result, "expected columns to match")
+// 		})
+// 	}
+// }
 
 func TestBuilder_Args(t *testing.T) {
 	t.Parallel()

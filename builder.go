@@ -1,11 +1,14 @@
 package goquerybuilder
 
 type QueryBuilder interface {
-	// Core
+	// Select
 	Select(columns ...string) QueryBuilder
-	SelectSafe(userInput []string, whitelist map[string]string) (QueryBuilder, error)
-	AddSelect(column string) QueryBuilder
-	AddSelectSafe(userInput string, whitelist map[string]string) (QueryBuilder, error)
+	SelectRaw(expr string, args ...any) QueryBuilder
+	SelectSafe(userInput []string, whitelist map[string]string) QueryBuilder
+	AddSelect(columns ...string) QueryBuilder
+	AddSelectRaw(expr string, args ...any) QueryBuilder
+	AddSelectSafe(userInput []string, whitelist map[string]string) QueryBuilder
+
 	From(table string) QueryBuilder
 	FromSafe(userInput string, whitelist map[string]string) (QueryBuilder, error)
 	ToSQL() (string, []any, error)
@@ -40,6 +43,13 @@ const (
 	QueryRaw   QueryType = "Raw"
 )
 
+type column struct {
+	queryType QueryType
+	name      string
+	expr      string
+	args      []any
+}
+
 type orderBy struct {
 	queryType QueryType
 	column    string
@@ -58,7 +68,7 @@ type builder struct {
 	dialect  Dialect
 	action   string
 	table    string
-	columns  []string
+	columns  []column
 	wheres   []condition
 	orderBys []orderBy
 	limit    int
@@ -87,7 +97,20 @@ func (b *builder) GetTable() string {
 }
 
 func (b *builder) GetColumns() []string {
-	return b.columns
+	if b.columns == nil {
+		return nil
+	}
+
+	res := make([]string, len(b.columns))
+	for i, col := range b.columns {
+		if col.queryType == QueryBasic {
+			res[i] = col.name
+		} else {
+			res[i] = col.expr
+		}
+	}
+
+	return res
 }
 
 func (b *builder) Args() []any {
