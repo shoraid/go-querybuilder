@@ -203,11 +203,7 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			re := regexp.MustCompile(`\$(\d+)`)
 			subSQL = re.ReplaceAllStringFunc(subSQL, func(m string) string {
 				nStr := m[1:] // strip leading '$'
-				n, err := strconv.Atoi(nStr)
-				if err != nil {
-					// should not happen; keep original token as a safe fallback
-					return m
-				}
+				n, _ := strconv.Atoi(nStr)
 
 				return d.Placeholder(base + n) // shift by base
 			})

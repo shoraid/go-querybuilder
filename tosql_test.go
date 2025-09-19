@@ -40,6 +40,15 @@ func TestBuilder_ToSQL(t *testing.T) {
 			},
 			expectedError: "unsupported action: update",
 		},
+		{
+			name: "should return error when dialect is nil",
+			builder: builder{
+				dialect: nil, // nil dialect
+				action:  "select",
+				table:   "users",
+			},
+			expectedError: "no dialect specified for builder",
+		},
 	}
 
 	for _, tt := range tests {

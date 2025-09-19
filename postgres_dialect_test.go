@@ -485,6 +485,16 @@ func TestPostgresDialect_CompileSelect_Select_Where_Simple(t *testing.T) {
 			expectedSQL:  `SELECT * FROM "users"`,
 			expectedArgs: []any{},
 		},
+		{
+			name:  "should default to AND when conjunction is missing",
+			table: "products",
+			wheres: []where{
+				{queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
+				{ /* no conj provided */ queryType: QueryBasic, column: "price", operator: ">", args: []any{100}},
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "price" > $2`,
+			expectedArgs: []any{"electronics", 100},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1346,6 +1356,21 @@ func TestPostgresDialect_CompileSelect_Where_Sub(t *testing.T) {
 				"l5_val1", 90, 100,
 			},
 		},
+		{
+			name:  "should return error when compileWhereClause fails due to invalid subquery",
+			table: "orders",
+			wheres: []where{
+				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
+					// missing dialect, will cause ToSQL() to fail
+					action:  "select",
+					table:   "broken_subquery",
+					columns: []column{{queryType: QueryBasic, name: "col"}},
+					limit:   -1,
+					offset:  -1,
+				}},
+			},
+			expectedError: "no dialect specified", // match the error returned by ToSQL()
+		},
 	}
 
 	for _, tt := range tests {
@@ -1481,6 +1506,23 @@ func TestPostgresDialect_CompileSelect_Select_Where_Combined(t *testing.T) {
 				"2023-01-01", "fraud", // $12, $13
 				11, 12, 13, // $14, $15, $16
 			},
+		},
+		{
+			name:  "should return error when nested where clause compilation fails",
+			table: "orders",
+			wheres: []where{
+				{queryType: QueryNested, nested: []where{
+					{queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
+						// no dialect — will cause ToSQL() to fail
+						action:  "select",
+						table:   "broken_table",
+						columns: []column{{queryType: QueryBasic, name: "some_col"}},
+						limit:   -1,
+						offset:  -1,
+					}},
+				}},
+			},
+			expectedError: "no dialect specified", // matches builder.ToSQL() error
 		},
 	}
 
