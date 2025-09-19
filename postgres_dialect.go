@@ -2,6 +2,8 @@ package goquerybuilder
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -125,8 +127,13 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 
 	for i, w := range wheres {
 		if i > 0 {
+			conj := w.conj
+			if conj == "" {
+				conj = "AND"
+			}
+
 			sb.WriteString(" ")
-			sb.WriteString(w.conj)
+			sb.WriteString(conj)
 			sb.WriteString(" ")
 		}
 
@@ -186,32 +193,36 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(")")
 
 		case QuerySub:
-			// Ensure dialect is inherited from parent if missing
-			if sbuilder, ok := w.sub.(*builder); ok && sbuilder.dialect == nil {
-				sbuilder.dialect = d
-			}
-
 			subSQL, subArgs, err := w.sub.ToSQL()
 			if err != nil {
-				// return "", fmt.Errorf("failed to build subquery: %w", err)
 				return "", err
 			}
 
-			// Renumber placeholders inside subquery SQL
-			for i := range subArgs {
-				from := fmt.Sprintf("$%d", i+1)
-				to := d.Placeholder(len(*globalArgs) + i + 1)
-				subSQL = strings.Replace(subSQL, from, to, 1)
-			}
+			// Renumber placeholders inside subquery SQL without collisions
+			base := len(*globalArgs) // number of args already present in the outer query
+			re := regexp.MustCompile(`\$(\d+)`)
+			subSQL = re.ReplaceAllStringFunc(subSQL, func(m string) string {
+				nStr := m[1:] // strip leading '$'
+				n, err := strconv.Atoi(nStr)
+				if err != nil {
+					// should not happen; keep original token as a safe fallback
+					return m
+				}
 
-			sb.WriteString(d.WrapColumn(w.column))
-			sb.WriteString(" ")
+				return d.Placeholder(base + n) // shift by base
+			})
+
+			// Append subquery args in the same order
+			*globalArgs = append(*globalArgs, subArgs...)
+
+			if w.column != "" {
+				sb.WriteString(d.WrapColumn(w.column))
+				sb.WriteString(" ")
+			}
 			sb.WriteString(w.operator)
 			sb.WriteString(" (")
 			sb.WriteString(subSQL)
 			sb.WriteString(")")
-
-			*globalArgs = append(*globalArgs, subArgs...)
 		}
 	}
 

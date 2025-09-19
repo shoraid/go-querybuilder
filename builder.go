@@ -38,8 +38,8 @@ type QueryBuilder interface {
 	WhereGroup(fn func(QueryBuilder)) QueryBuilder
 	OrWhereGroup(fn func(QueryBuilder)) QueryBuilder
 
-	WhereSub(column, operator string, sub QueryBuilder) QueryBuilder
-	OrWhereSub(column, operator string, sub QueryBuilder) QueryBuilder
+	WhereSub(column, operator string, sub func(QueryBuilder)) QueryBuilder
+	OrWhereSub(column, operator string, sub func(QueryBuilder)) QueryBuilder
 
 	// Order By
 	OrderBy(column, direction string) QueryBuilder

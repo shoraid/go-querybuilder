@@ -1150,7 +1150,7 @@ func TestBuilder_WhereSub(t *testing.T) {
 		initialWheres  []where
 		column         string
 		operator       string
-		sub            QueryBuilder
+		subFn          func(QueryBuilder)
 		expectedWheres []where
 	}{
 		{
@@ -1158,7 +1158,9 @@ func TestBuilder_WhereSub(t *testing.T) {
 			initialWheres: []where{},
 			column:        "user_id",
 			operator:      "IN",
-			sub:           New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "active"),
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("users").Where("status", "=", "active")
+			},
 			expectedWheres: []where{
 				{
 					queryType: QuerySub,
@@ -1176,7 +1178,9 @@ func TestBuilder_WhereSub(t *testing.T) {
 			},
 			column:   "product_id",
 			operator: "NOT IN",
-			sub:      New(PostgresDialect{}).Select("id").From("products").Where("stock", "<", 10),
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("products").Where("stock", "<", 10)
+			},
 			expectedWheres: []where{
 				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
 				{
@@ -1193,7 +1197,9 @@ func TestBuilder_WhereSub(t *testing.T) {
 			initialWheres: []where{},
 			column:        "category_id",
 			operator:      "=",
-			sub:           New(PostgresDialect{}).Select("id").From("categories"),
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("categories")
+			},
 			expectedWheres: []where{
 				{
 					queryType: QuerySub,
@@ -1211,13 +1217,36 @@ func TestBuilder_WhereSub(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{wheres: tt.initialWheres}
+			b := &builder{
+				dialect: PostgresDialect{},
+				wheres:  tt.initialWheres,
+			}
 
 			// Act
-			result := b.WhereSub(tt.column, tt.operator, tt.sub)
+			result := b.WhereSub(tt.column, tt.operator, tt.subFn)
 
 			// Assert
-			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			// We need to compare the sub-builders separately as direct comparison of interfaces fails
+			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
+			if len(tt.expectedWheres) > 0 {
+				for i, expectedWhere := range tt.expectedWheres {
+					actualWhere := b.wheres[i]
+					assert.Equal(t, expectedWhere.queryType, actualWhere.queryType, "expected query type to match")
+					assert.Equal(t, expectedWhere.column, actualWhere.column, "expected column to match")
+					assert.Equal(t, expectedWhere.operator, actualWhere.operator, "expected operator to match")
+					assert.Equal(t, expectedWhere.conj, actualWhere.conj, "expected conj to match")
+					assert.Equal(t, expectedWhere.args, actualWhere.args, "expected args to match")
+
+					if expectedWhere.queryType == QuerySub {
+						expectedSubBuilder := expectedWhere.sub.(*builder)
+						actualSubBuilder := actualWhere.sub.(*builder)
+						assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "expected table to match")
+						assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "expected columns to match")
+						assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "expected wheres to match")
+					}
+				}
+			}
+
 			assert.Equal(t, b, result, "expected WhereSub() to return the same builder instance")
 		})
 	}
@@ -1231,7 +1260,7 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 		initialWheres  []where
 		column         string
 		operator       string
-		sub            QueryBuilder
+		subFn          func(QueryBuilder)
 		expectedWheres []where
 	}{
 		{
@@ -1239,7 +1268,9 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 			initialWheres: []where{},
 			column:        "user_id",
 			operator:      "IN",
-			sub:           New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "inactive"),
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("users").Where("status", "=", "inactive")
+			},
 			expectedWheres: []where{
 				{
 					queryType: QuerySub,
@@ -1257,7 +1288,9 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 			},
 			column:   "product_id",
 			operator: "NOT IN",
-			sub:      New(PostgresDialect{}).Select("id").From("products").Where("stock", ">", 50),
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("products").Where("stock", ">", 50)
+			},
 			expectedWheres: []where{
 				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
 				{
@@ -1270,11 +1303,12 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 			},
 		},
 		{
-			name:          "should handle subquery with no conditions with OR",
-			initialWheres: []where{},
-			column:        "category_id",
-			operator:      "=",
-			sub:           New(PostgresDialect{}).Select("id").From("categories"),
+			name:     "should handle subquery with no conditions with OR",
+			column:   "category_id",
+			operator: "=",
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("categories")
+			},
 			expectedWheres: []where{
 				{
 					queryType: QuerySub,
@@ -1292,13 +1326,34 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{wheres: tt.initialWheres}
+			b := &builder{wheres: tt.initialWheres, dialect: PostgresDialect{}}
 
 			// Act
-			result := b.OrWhereSub(tt.column, tt.operator, tt.sub)
+			result := b.OrWhereSub(tt.column, tt.operator, tt.subFn)
 
 			// Assert
-			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			// We need to compare the sub-builders separately as direct comparison of interfaces fails
+			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
+
+			if len(tt.expectedWheres) > 0 {
+				for i, expectedWhere := range tt.expectedWheres {
+					actualWhere := b.wheres[i]
+					assert.Equal(t, expectedWhere.queryType, actualWhere.queryType, "expected QueryType to match")
+					assert.Equal(t, expectedWhere.column, actualWhere.column, "expected column to match")
+					assert.Equal(t, expectedWhere.operator, actualWhere.operator, "expected operator to match")
+					assert.Equal(t, expectedWhere.conj, actualWhere.conj, "expected conj to match")
+					assert.Equal(t, expectedWhere.args, actualWhere.args, "expected args to match")
+
+					if expectedWhere.queryType == QuerySub {
+						expectedSubBuilder := expectedWhere.sub.(*builder)
+						actualSubBuilder := actualWhere.sub.(*builder)
+						assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "expected table to match")
+						assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "expected columns to match")
+						assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "expected wheres to match")
+					}
+				}
+			}
+
 			assert.Equal(t, b, result, "expected OrWhereSub() to return the same builder instance")
 		})
 	}
@@ -1507,23 +1562,27 @@ func BenchmarkBuilder_OrWhereGroup(b *testing.B) {
 }
 
 func BenchmarkBuilder_WhereSub(b *testing.B) {
-	builder := &builder{}
+	builder := &builder{dialect: PostgresDialect{}}
 	column := "user_id"
 	operator := "IN"
-	sub := New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "active")
+	subFn := func(qb QueryBuilder) {
+		qb.Select("id").From("users").Where("status", "=", "active")
+	}
 
 	for b.Loop() {
-		builder.WhereSub(column, operator, sub)
+		builder.WhereSub(column, operator, subFn)
 	}
 }
 
 func BenchmarkBuilder_OrWhereSub(b *testing.B) {
-	builder := &builder{}
+	builder := &builder{dialect: PostgresDialect{}}
 	column := "product_id"
 	operator := "NOT IN"
-	sub := New(PostgresDialect{}).Select("id").From("products").Where("stock", "<", 10)
+	subFn := func(qb QueryBuilder) {
+		qb.Select("id").From("products").Where("stock", "<", 10)
+	}
 
 	for b.Loop() {
-		builder.OrWhereSub(column, operator, sub)
+		builder.OrWhereSub(column, operator, subFn)
 	}
 }
