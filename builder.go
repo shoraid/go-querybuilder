@@ -38,6 +38,9 @@ type QueryBuilder interface {
 	WhereGroup(fn func(QueryBuilder)) QueryBuilder
 	OrWhereGroup(fn func(QueryBuilder)) QueryBuilder
 
+	WhereSub(column, operator string, sub QueryBuilder) QueryBuilder
+	OrWhereSub(column, operator string, sub QueryBuilder) QueryBuilder
+
 	// Order By
 	OrderBy(column, direction string) QueryBuilder
 	OrderByRaw(expr string, args ...any) QueryBuilder
@@ -61,6 +64,7 @@ const (
 	QueryNested  QueryType = 3
 	QueryNull    QueryType = 4
 	QueryRaw     QueryType = 5
+	QuerySub     QueryType = 6
 )
 
 type column struct {
@@ -86,6 +90,7 @@ type where struct {
 	expr      string
 	args      []any
 	nested    []where
+	sub       QueryBuilder
 }
 
 type builder struct {

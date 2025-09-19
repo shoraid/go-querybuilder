@@ -1142,6 +1142,168 @@ func TestBuilder_OrWhereGroup(t *testing.T) {
 	}
 }
 
+func TestBuilder_WhereSub(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		operator       string
+		sub            QueryBuilder
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single WHERE subquery condition",
+			initialWheres: []where{},
+			column:        "user_id",
+			operator:      "IN",
+			sub:           New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "active"),
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "user_id",
+					operator:  "IN",
+					conj:      "AND",
+					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "active"),
+				},
+			},
+		},
+		{
+			name: "should add a second WHERE subquery condition with AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column:   "product_id",
+			operator: "NOT IN",
+			sub:      New(PostgresDialect{}).Select("id").From("products").Where("stock", "<", 10),
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{
+					queryType: QuerySub,
+					column:    "product_id",
+					operator:  "NOT IN",
+					conj:      "AND",
+					sub:       New(PostgresDialect{}).Select("id").From("products").Where("stock", "<", 10),
+				},
+			},
+		},
+		{
+			name:          "should handle subquery with no conditions",
+			initialWheres: []where{},
+			column:        "category_id",
+			operator:      "=",
+			sub:           New(PostgresDialect{}).Select("id").From("categories"),
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "category_id",
+					operator:  "=",
+					conj:      "AND",
+					sub:       New(PostgresDialect{}).Select("id").From("categories"),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.WhereSub(tt.column, tt.operator, tt.sub)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected WhereSub() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereSub(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		column         string
+		operator       string
+		sub            QueryBuilder
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single OR WHERE subquery condition",
+			initialWheres: []where{},
+			column:        "user_id",
+			operator:      "IN",
+			sub:           New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "inactive"),
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "user_id",
+					operator:  "IN",
+					conj:      "OR",
+					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "inactive"),
+				},
+			},
+		},
+		{
+			name: "should add a second OR WHERE subquery condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			column:   "product_id",
+			operator: "NOT IN",
+			sub:      New(PostgresDialect{}).Select("id").From("products").Where("stock", ">", 50),
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{
+					queryType: QuerySub,
+					column:    "product_id",
+					operator:  "NOT IN",
+					conj:      "OR",
+					sub:       New(PostgresDialect{}).Select("id").From("products").Where("stock", ">", 50),
+				},
+			},
+		},
+		{
+			name:          "should handle subquery with no conditions with OR",
+			initialWheres: []where{},
+			column:        "category_id",
+			operator:      "=",
+			sub:           New(PostgresDialect{}).Select("id").From("categories"),
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "category_id",
+					operator:  "=",
+					conj:      "OR",
+					sub:       New(PostgresDialect{}).Select("id").From("categories"),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres}
+
+			// Act
+			result := b.OrWhereSub(tt.column, tt.operator, tt.sub)
+
+			// Assert
+			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
+			assert.Equal(t, b, result, "expected OrWhereSub() to return the same builder instance")
+		})
+	}
+}
+
 // -----------------
 // --- BENCHMARK ---
 // -----------------
@@ -1341,5 +1503,27 @@ func BenchmarkBuilder_OrWhereGroup(b *testing.B) {
 
 	for b.Loop() {
 		builder.OrWhereGroup(groupFn)
+	}
+}
+
+func BenchmarkBuilder_WhereSub(b *testing.B) {
+	builder := &builder{}
+	column := "user_id"
+	operator := "IN"
+	sub := New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "active")
+
+	for b.Loop() {
+		builder.WhereSub(column, operator, sub)
+	}
+}
+
+func BenchmarkBuilder_OrWhereSub(b *testing.B) {
+	builder := &builder{}
+	column := "product_id"
+	operator := "NOT IN"
+	sub := New(PostgresDialect{}).Select("id").From("products").Where("stock", "<", 10)
+
+	for b.Loop() {
+		builder.OrWhereSub(column, operator, sub)
 	}
 }

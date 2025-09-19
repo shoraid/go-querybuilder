@@ -219,3 +219,27 @@ func (b *builder) OrWhereGroup(fn func(QueryBuilder)) QueryBuilder {
 
 	return b
 }
+
+func (b *builder) WhereSub(column, operator string, sub QueryBuilder) QueryBuilder {
+	b.wheres = append(b.wheres, where{
+		queryType: QuerySub,
+		column:    column,
+		operator:  operator,
+		conj:      "AND",
+		sub:       sub,
+	})
+
+	return b
+}
+
+func (b *builder) OrWhereSub(column, operator string, sub QueryBuilder) QueryBuilder {
+	b.wheres = append(b.wheres, where{
+		queryType: QuerySub,
+		column:    column,
+		operator:  operator,
+		conj:      "OR",
+		sub:       sub,
+	})
+
+	return b
+}

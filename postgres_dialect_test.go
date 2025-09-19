@@ -1051,6 +1051,185 @@ func TestPostgresDialect_CompileSelect_Select_Where_Group(t *testing.T) {
 	}
 }
 
+func TestPostgresDialect_CompileSelect_Select_Where_Sub(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		table         string
+		wheres        []where
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name:  "should handle where conditions with subquery",
+			table: "users",
+			wheres: []where{
+				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
+					action:  "select",
+					table:   "orders",
+					columns: []column{{queryType: QueryBasic, name: "user_id"}},
+					wheres: []where{
+						{conj: "AND", queryType: QueryBasic, column: "amount", operator: ">", args: []any{100}},
+					},
+					limit:  -1,
+					offset: -1,
+				}},
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "id" IN (SELECT "user_id" FROM "orders" WHERE "amount" > $1)`,
+			expectedArgs: []any{100},
+		},
+		{
+			name:  "should handle where conditions with subquery and outer conditions",
+			table: "products",
+			wheres: []where{
+				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
+				{conj: "AND", queryType: QuerySub, column: "id", operator: "NOT IN", sub: &builder{
+					action:  "select",
+					table:   "order_items",
+					columns: []column{{queryType: QueryBasic, name: "product_id"}},
+					wheres: []where{
+						{conj: "AND", queryType: QueryBasic, column: "quantity", operator: "<", args: []any{5}},
+					},
+					limit:  -1,
+					offset: -1,
+				}},
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "id" NOT IN (SELECT "product_id" FROM "order_items" WHERE "quantity" < $2)`,
+			expectedArgs: []any{"electronics", 5},
+		},
+		{
+			name:  "should handle nested subquery",
+			table: "users",
+			wheres: []where{
+				{conj: "AND", queryType: QueryBasic, column: "status", operator: "=", args: []any{"active"}},
+				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
+					action:  "select",
+					table:   "user_roles",
+					columns: []column{{queryType: QueryBasic, name: "user_id"}},
+					wheres: []where{
+						{conj: "AND", queryType: QuerySub, column: "role_id", operator: "IN", sub: &builder{
+							action:  "select",
+							table:   "roles",
+							columns: []column{{queryType: QueryBasic, name: "id"}},
+							wheres: []where{
+								{conj: "AND", queryType: QueryBasic, column: "name", operator: "=", args: []any{"admin"}},
+							},
+							limit:  -1,
+							offset: -1,
+						}},
+					},
+					limit:  -1,
+					offset: -1,
+				}},
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 AND "id" IN (SELECT "user_id" FROM "user_roles" WHERE "role_id" IN (SELECT "id" FROM "roles" WHERE "name" = $2))`,
+			expectedArgs: []any{"active", "admin"},
+		},
+		{
+			name:  "should handle subquery with no outer conditions",
+			table: "products",
+			wheres: []where{
+				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
+					action:  "select",
+					table:   "popular_products",
+					columns: []column{{queryType: QueryBasic, name: "product_id"}},
+					limit:   -1,
+					offset:  -1,
+				}},
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "id" IN (SELECT "product_id" FROM "popular_products")`,
+			expectedArgs: []any{},
+		},
+		{
+			name:  "should handle subquery with no conditions",
+			table: "users",
+			wheres: []where{
+				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
+					action:  "select",
+					table:   "active_users",
+					columns: []column{{queryType: QueryBasic, name: "id"}},
+					limit:   -1,
+					offset:  -1,
+				}},
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "id" IN (SELECT "id" FROM "active_users")`,
+			expectedArgs: []any{},
+		},
+		{
+			name:  "should handle subquery with raw where condition",
+			table: "products",
+			wheres: []where{
+				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
+					action:  "select",
+					table:   "product_sales",
+					columns: []column{{queryType: QueryBasic, name: "product_id"}},
+					wheres: []where{
+						{conj: "AND", queryType: QueryRaw, expr: "sales_count > ? AND region = ?", args: []any{100, "US"}},
+					},
+					limit:  -1,
+					offset: -1,
+				}},
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "id" IN (SELECT "product_id" FROM "product_sales" WHERE sales_count > $1 AND region = $2)`,
+			expectedArgs: []any{100, "US"},
+		},
+		{
+			name:  "should inherit dialect from parent when subquery has no dialect",
+			table: "products",
+			wheres: []where{
+				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
+				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
+					// NOTE: no dialect set here!
+					action:  "select",
+					table:   "order_items",
+					columns: []column{{queryType: QueryBasic, name: "product_id"}},
+					wheres: []where{
+						{conj: "AND", queryType: QueryBasic, column: "quantity", operator: "<", args: []any{5}},
+					},
+					limit:  -1,
+					offset: -1,
+				}},
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "id" IN (SELECT "product_id" FROM "order_items" WHERE "quantity" < $2)`,
+			expectedArgs: []any{"electronics", 5},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				action:  "select",
+				table:   tt.table,
+				wheres:  tt.wheres,
+				limit:   -1,
+				offset:  -1,
+			}
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
 func TestPostgresDialect_CompileSelect_Select_Where_Combined(t *testing.T) {
 	t.Parallel()
 
@@ -1063,7 +1242,7 @@ func TestPostgresDialect_CompileSelect_Select_Where_Combined(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name:  "should combine basic, between, in, null, raw, and nested where conditions",
+			name:  "should combine basic, between, in, null, raw, sub query, and nested where conditions",
 			table: "products",
 			wheres: []where{
 				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
@@ -1075,30 +1254,78 @@ func TestPostgresDialect_CompileSelect_Select_Where_Combined(t *testing.T) {
 					{queryType: QueryBasic, column: "manufacturer", operator: "=", args: []any{"Apple"}},
 					{conj: "AND", queryType: QueryBasic, column: "warranty_years", operator: ">", args: []any{1}},
 				}},
+				{conj: "AND", queryType: QuerySub, column: "id", operator: "NOT IN", sub: &builder{
+					action:  "select",
+					table:   "discontinued_products",
+					columns: []column{{queryType: QueryBasic, name: "product_id"}},
+					limit:   -1,
+					offset:  -1,
+				}},
 			},
-			expectedSQL: `SELECT * FROM "products" WHERE "category" = $1 AND "price" BETWEEN $2 AND $3 OR "status" IN ($4, $5) AND "description" IS NOT NULL AND stock > $6 AND warehouse_id = $7 OR ("manufacturer" = $8 AND "warranty_years" > $9)`,
-			expectedArgs: []any{
-				"electronics", 100, 500, "available", "backorder", 10, 5, "Apple", 1,
-			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "price" BETWEEN $2 AND $3 OR "status" IN ($4, $5) AND "description" IS NOT NULL AND stock > $6 AND warehouse_id = $7 OR ("manufacturer" = $8 AND "warranty_years" > $9) AND "id" NOT IN (SELECT "product_id" FROM "discontinued_products")`,
+			expectedArgs: []any{"electronics", 100, 500, "available", "backorder", 10, 5, "Apple", 1},
 		},
 		{
-			name:  "should handle complex nested conditions with various operators",
+			name:  "should handle complex query with deep nesting, multiple subqueries, and all operators",
 			table: "orders",
 			wheres: []where{
+				// top-level simple where
+				{conj: "AND", queryType: QueryBasic, column: "customer_id", operator: "=", args: []any{123}},
+				{conj: "AND", queryType: QueryBasic, column: "region", operator: "=", args: []any{"EU"}},
+
+				// first-level nested group
 				{conj: "AND", queryType: QueryNested, nested: []where{
-					{queryType: QueryBasic, column: "customer_id", operator: "=", args: []any{1}},
-					{conj: "OR", queryType: QueryNested, nested: []where{
-						{queryType: QueryBasic, column: "order_date", operator: ">=", args: []any{"2023-01-01"}},
-						{conj: "AND", queryType: QueryBasic, column: "order_date", operator: "<=", args: []any{"2023-12-31"}},
+					// IN condition
+					{queryType: QueryBasic, column: "status", operator: "IN", args: []any{[]any{"completed", "shipped"}}},
+					// OR BETWEEN condition
+					{conj: "OR", queryType: QueryBetween, column: "order_date", operator: "BETWEEN", args: []any{"2023-01-01", "2023-06-30"}},
+
+					// second-level nested group
+					{conj: "AND", queryType: QueryNested, nested: []where{
+						// RAW expression
+						{queryType: QueryRaw, expr: "total_amount > ? AND currency = ?", args: []any{500, "USD"}},
+						{conj: "OR", queryType: QueryNull, column: "tracking_number", operator: "IS NULL"},
+						{conj: "OR", queryType: QueryNull, column: "updated_at", operator: "IS NOT NULL"},
+						// subquery inside second-level group
+						{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
+							action:  "select",
+							table:   "priority_orders",
+							columns: []column{{queryType: QueryBasic, name: "order_id"}},
+							wheres: []where{
+								{queryType: QueryBasic, column: "priority_level", operator: "=", args: []any{"high"}},
+								{conj: "AND", queryType: QueryBetween, column: "created_at", operator: "BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
+							},
+							orderBys: []orderBy{{queryType: QueryBasic, column: "created_at", dir: "DESC"}},
+							limit:    10,
+							offset:   5,
+						}},
 					}},
 				}},
-				{conj: "OR", queryType: QueryBasic, column: "total_amount", operator: ">", args: []any{1000}},
-				{conj: "AND", queryType: QueryNull, column: "shipped_date", operator: "IS NULL", args: []any{}},
-				{conj: "AND", queryType: QueryRaw, expr: "EXTRACT(DOW FROM order_date) IN (?, ?)", args: []any{1, 7}}, // Monday and Sunday
+
+				// top-level NOT IN subquery
+				{conj: "AND", queryType: QuerySub, column: "id", operator: "NOT IN", sub: &builder{
+					action:  "select",
+					table:   "refunded_orders",
+					columns: []column{{queryType: QueryBasic, name: "order_id"}},
+					wheres: []where{
+						{queryType: QueryBasic, column: "refund_date", operator: ">", args: []any{"2023-01-01"}},
+						{conj: "AND", queryType: QueryBasic, column: "reason", operator: "=", args: []any{"fraud"}},
+						{conj: "OR", queryType: QueryBasic, column: "store_id", operator: "IN", args: []any{[]any{11, 12, 13}}},
+					},
+					limit:  20,
+					offset: 0,
+				}},
 			},
-			expectedSQL: `SELECT * FROM "orders" WHERE ("customer_id" = $1 OR ("order_date" >= $2 AND "order_date" <= $3)) OR "total_amount" > $4 AND "shipped_date" IS NULL AND EXTRACT(DOW FROM order_date) IN ($5, $6)`,
+			expectedSQL: `SELECT * FROM "orders" WHERE "customer_id" = $1 AND "region" = $2 AND ("status" IN ($3, $4) OR "order_date" BETWEEN $5 AND $6 AND (total_amount > $7 AND currency = $8 OR "tracking_number" IS NULL OR "updated_at" IS NOT NULL AND "id" IN (SELECT "order_id" FROM "priority_orders" WHERE "priority_level" = $9 AND "created_at" BETWEEN $10 AND $11 ORDER BY "created_at" DESC LIMIT 10 OFFSET 5))) AND "id" NOT IN (SELECT "order_id" FROM "refunded_orders" WHERE "refund_date" > $12 AND "reason" = $13 OR "store_id" IN ($14, $15, $16) LIMIT 20 OFFSET 0)`,
 			expectedArgs: []any{
-				1, "2023-01-01", "2023-12-31", 1000, 1, 7,
+				123, "EU", // $1, $2
+				"completed", "shipped", // $3, $4
+				"2023-01-01", "2023-06-30", // $5, $6
+				500, "USD", // $7, $8
+				"high",                     // $9
+				"2023-01-01", "2023-12-31", // $10, $11
+				"2023-01-01", "fraud", // $12, $13
+				11, 12, 13, // $14, $15, $16
 			},
 		},
 	}
@@ -1539,6 +1766,77 @@ func BenchmarkPostgresDialect_CompileSelect_Select_Where_Combined(b *testing.B) 
 
 	for b.Loop() {
 		_, _, _ = d.CompileSelect(builder)
+	}
+}
+
+func BenchmarkPostgresDialect_CompileSelect_Where_Complex(b *testing.B) {
+	d := PostgresDialect{}
+
+	// Build a very complex query once, reuse for each benchmark iteration
+	subInner := &builder{
+		dialect: d,
+		action:  "select",
+		table:   "priority_orders",
+		columns: []column{{queryType: QueryBasic, name: "order_id"}},
+		wheres: []where{
+			{queryType: QueryBasic, column: "priority_level", operator: "=", args: []any{"high"}},
+			{conj: "AND", queryType: QueryBetween, column: "created_at", operator: "BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
+		},
+		orderBys: []orderBy{{queryType: QueryBasic, column: "created_at", dir: "DESC"}},
+		limit:    10,
+		offset:   5,
+	}
+
+	subOuter := &builder{
+		dialect: d,
+		action:  "select",
+		table:   "refunded_orders",
+		columns: []column{{queryType: QueryBasic, name: "order_id"}},
+		wheres: []where{
+			{queryType: QueryBasic, column: "refund_date", operator: ">", args: []any{"2023-01-01"}},
+			{conj: "AND", queryType: QueryBasic, column: "reason", operator: "=", args: []any{"fraud"}},
+			{conj: "OR", queryType: QueryBasic, column: "store_id", operator: "IN", args: []any{[]any{11, 12, 13}}},
+		},
+		limit:  20,
+		offset: 0,
+	}
+
+	mainBuilder := &builder{
+		dialect: d,
+		action:  "select",
+		table:   "orders",
+		wheres: []where{
+			{queryType: QueryBasic, column: "customer_id", operator: "=", args: []any{123}},
+			{conj: "AND", queryType: QueryBasic, column: "region", operator: "=", args: []any{"EU"}},
+			{conj: "AND", queryType: QueryNested, nested: []where{
+				// IN condition
+				{queryType: QueryBasic, column: "status", operator: "IN", args: []any{[]any{"completed", "shipped"}}},
+				// OR BETWEEN condition
+				{conj: "OR", queryType: QueryBetween, column: "order_date", operator: "BETWEEN", args: []any{"2023-01-01", "2023-06-30"}},
+
+				// second-level nested group
+				{conj: "AND", queryType: QueryNested, nested: []where{
+					// RAW expression
+					{queryType: QueryRaw, expr: "total_amount > ? AND currency = ?", args: []any{500, "USD"}},
+					{conj: "OR", queryType: QueryNull, column: "tracking_number", operator: "IS NULL"},
+					{conj: "OR", queryType: QueryNull, column: "updated_at", operator: "IS NOT NULL"},
+					// subquery inside second-level group
+					{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: subInner},
+				}},
+			}},
+
+			// top-level NOT IN subquery
+			{conj: "AND", queryType: QuerySub, column: "id", operator: "NOT IN", sub: subOuter},
+		},
+		limit:  -1,
+		offset: -1,
+	}
+
+	for b.Loop() {
+		_, _, err := d.CompileSelect(mainBuilder)
+		if err != nil {
+			b.Fatalf("CompileSelect failed: %v", err)
+		}
 	}
 }
 

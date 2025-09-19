@@ -70,8 +70,13 @@ func (d PostgresDialect) CompileSelect(b *builder) (string, []any, error) {
 
 	// WHERE clause (recursive)
 	if len(b.wheres) > 0 {
+		whereClause, err := d.compileWhereClause(b.wheres, &args)
+		if err != nil {
+			return "", nil, err
+		}
+
 		sb.WriteString(" WHERE ")
-		sb.WriteString(d.compileWhereClause(b.wheres, &args))
+		sb.WriteString(whereClause)
 	}
 
 	// ORDER BY clause
@@ -115,7 +120,7 @@ func (d PostgresDialect) compileSelectClause(columns []column, globalArgs *[]any
 }
 
 // Recursive WHERE compiler
-func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) string {
+func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (string, error) {
 	var sb strings.Builder
 
 	for i, w := range wheres {
@@ -171,13 +176,46 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) s
 			sb.WriteString(expr)
 
 		case QueryNested:
+			whereClause, err := d.compileWhereClause(w.nested, globalArgs) // recursion updates globalArgs directly
+			if err != nil {
+				return "", err
+			}
+
 			sb.WriteString("(")
-			sb.WriteString(d.compileWhereClause(w.nested, globalArgs)) // recursion updates globalArgs directly
+			sb.WriteString(whereClause)
 			sb.WriteString(")")
+
+		case QuerySub:
+			// Ensure dialect is inherited from parent if missing
+			if sbuilder, ok := w.sub.(*builder); ok && sbuilder.dialect == nil {
+				sbuilder.dialect = d
+			}
+
+			subSQL, subArgs, err := w.sub.ToSQL()
+			if err != nil {
+				// return "", fmt.Errorf("failed to build subquery: %w", err)
+				return "", err
+			}
+
+			// Renumber placeholders inside subquery SQL
+			for i := range subArgs {
+				from := fmt.Sprintf("$%d", i+1)
+				to := d.Placeholder(len(*globalArgs) + i + 1)
+				subSQL = strings.Replace(subSQL, from, to, 1)
+			}
+
+			sb.WriteString(d.WrapColumn(w.column))
+			sb.WriteString(" ")
+			sb.WriteString(w.operator)
+			sb.WriteString(" (")
+			sb.WriteString(subSQL)
+			sb.WriteString(")")
+
+			*globalArgs = append(*globalArgs, subArgs...)
 		}
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 func (d PostgresDialect) compileOrderByClause(orderBys []orderBy, globalArgs *[]any) string {
