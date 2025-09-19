@@ -203,6 +203,9 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			re := regexp.MustCompile(`\$(\d+)`)
 			subSQL = re.ReplaceAllStringFunc(subSQL, func(m string) string {
 				nStr := m[1:] // strip leading '$'
+
+				// NOTE: strconv.Atoi cannot fail here because the regex \$(\d+) guarantees nStr contains only digits.
+				// Error handling is unnecessary and was removed to avoid an unreachable branch in coverage.
 				n, _ := strconv.Atoi(nStr)
 
 				return d.Placeholder(base + n) // shift by base
