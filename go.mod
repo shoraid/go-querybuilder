@@ -1,4 +1,4 @@
-module github.com/shoraid/go-querybuilder
+module github.com/shoraid/go-sequel
 
 go 1.25.0
 

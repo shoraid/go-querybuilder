@@ -1,4 +1,4 @@
-package goquerybuilder
+package sequel
 
 type QueryBuilder interface {
 	// Select

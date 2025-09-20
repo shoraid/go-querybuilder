@@ -1,4 +1,4 @@
-package goquerybuilder
+package sequel
 
 func (b *builder) Limit(limit int) QueryBuilder {
 	if limit < 0 {

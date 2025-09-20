@@ -1,4 +1,4 @@
-package goquerybuilder
+package sequel
 
 func (b *builder) Where(column string, operator string, value any) QueryBuilder {
 	b.wheres = append(b.wheres, where{
