@@ -108,12 +108,12 @@ func TestPostgresDialect_WrapColumn(t *testing.T) {
 		{
 			name:     "should quote column with alias using AS",
 			input:    "name AS username",
-			expected: `"name" AS username`,
+			expected: `"name" AS "username"`,
 		},
 		{
 			name:     "should quote column with alias using mixed case",
 			input:    "Name AS UserName",
-			expected: `"Name" AS UserName`,
+			expected: `"Name" AS "UserName"`,
 		},
 		{
 			name:     "should quote table.column without alias",
@@ -123,17 +123,17 @@ func TestPostgresDialect_WrapColumn(t *testing.T) {
 		{
 			name:     "should quote table.column with alias",
 			input:    "users.id AS user_id",
-			expected: `"users"."id" AS user_id`,
+			expected: `"users"."id" AS "user_id"`,
 		},
 		{
 			name:     "should quote column with SQL function and alias",
 			input:    "COUNT(id) AS total",
-			expected: `"COUNT(id)" AS total`, // function treated as identifier
+			expected: `"COUNT(id)" AS "total"`, // function treated as identifier
 		},
 		{
 			name:     "should handle extra spaces before alias",
 			input:    "email     AS    email_address",
-			expected: `"email" AS email_address`,
+			expected: `"email" AS "email_address"`,
 		},
 		{
 			name:     "should quote column with underscore",
@@ -260,32 +260,32 @@ func TestPostgresDialect_WrapTable(t *testing.T) {
 		{
 			name:     "should quote schema-qualified table without alias",
 			input:    "public.users",
-			expected: `"public.users"`,
+			expected: `"public"."users"`,
 		},
 		{
 			name:     "should quote table with alias",
 			input:    "users u",
-			expected: `"users" AS u`,
+			expected: `"users" AS "u"`,
 		},
 		{
 			name:     "should quote table with alias containing number",
 			input:    "orders o1",
-			expected: `"orders" AS o1`,
+			expected: `"orders" AS "o1"`,
 		},
 		{
 			name:     "should handle extra spaces between table and alias",
 			input:    "users     u",
-			expected: `"users" AS u`,
+			expected: `"users" AS "u"`,
 		},
 		{
 			name:     "should quote table name with underscore",
 			input:    "user_profile up",
-			expected: `"user_profile" AS up`,
+			expected: `"user_profile" AS "up"`,
 		},
 		{
 			name:     "should quote table name with hyphen",
 			input:    "order-items oi",
-			expected: `"order-items" AS oi`,
+			expected: `"order-items" AS "oi"`,
 		},
 		{
 			name:     "should quote table name without alias but with mixed case",
@@ -295,12 +295,12 @@ func TestPostgresDialect_WrapTable(t *testing.T) {
 		{
 			name:     "should quote table name with alias and mixed case",
 			input:    "UserTable ut",
-			expected: `"UserTable" AS ut`,
+			expected: `"UserTable" AS "ut"`,
 		},
 		{
-			name:     "should quote empty string (edge case)",
+			name:     "should not quote empty string",
 			input:    "",
-			expected: `""`,
+			expected: "",
 		},
 	}
 
@@ -363,7 +363,7 @@ func TestPostgresDialect_CompileSelect_Select_Simple(t *testing.T) {
 				{queryType: QueryBasic, name: "u.id"},
 				{queryType: QueryBasic, name: "u.name"},
 			},
-			expectedSQL:  `SELECT "u"."id", "u"."name" FROM "users" AS u`,
+			expectedSQL:  `SELECT "u"."id", "u"."name" FROM "users" AS "u"`,
 			expectedArgs: []any{},
 		},
 		{

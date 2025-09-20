@@ -25,33 +25,54 @@ func (d PostgresDialect) Placeholder(n int) string {
 }
 
 func (d PostgresDialect) WrapColumn(expr string) string {
+	var sb strings.Builder
 	parts := strings.Fields(expr) // preserve original case but split cleanly
 	if len(parts) == 3 && strings.EqualFold(parts[1], "as") {
-		col := parts[0]   // just the first token (before AS)
-		alias := parts[2] // after AS
+		sb.WriteString(d.WrapIdentifier(parts[0])) // column
+		sb.WriteString(" AS ")
+		sb.WriteString(`"`)
+		sb.WriteString(parts[2]) // alias
+		sb.WriteString(`"`)
 
-		return d.WrapIdentifier(col) + " AS " + alias
+		return sb.String()
 	}
 
 	return d.WrapIdentifier(expr)
 }
 
 func (d PostgresDialect) WrapIdentifier(id string) string {
+	var sb strings.Builder
 	parts := strings.Split(id, ".")
 	for i, p := range parts {
-		parts[i] = `"` + p + `"`
+		if i > 0 {
+			sb.WriteString(".")
+		}
+		sb.WriteString(`"`)
+		sb.WriteString(p)
+		sb.WriteString(`"`)
 	}
 
-	return strings.Join(parts, ".")
+	return sb.String()
 }
 
 func (d PostgresDialect) WrapTable(expr string) string {
-	parts := strings.Fields(expr)
-	if len(parts) == 2 {
-		return `"` + parts[0] + `" AS ` + parts[1]
+	if expr == "" {
+		return ""
 	}
 
-	return `"` + expr + `"`
+	parts := strings.Fields(expr)
+	if len(parts) == 2 {
+		var sb strings.Builder
+		sb.WriteString(d.WrapIdentifier(parts[0]))
+		sb.WriteString(" AS ")
+		sb.WriteString(`"`)
+		sb.WriteString(parts[1]) // alias
+		sb.WriteString(`"`)
+
+		return sb.String()
+	}
+
+	return d.WrapIdentifier(expr)
 }
 
 func (d PostgresDialect) CompileSelect(b *builder) (string, []any, error) {
