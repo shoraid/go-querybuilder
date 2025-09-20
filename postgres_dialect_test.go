@@ -1,4 +1,4 @@
-package goquerybuilder
+package sequel
 
 import (
 	"fmt"

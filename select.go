@@ -1,4 +1,4 @@
-package goquerybuilder
+package sequel
 
 func (b *builder) Select(columns ...string) QueryBuilder {
 	b.action = "select"
