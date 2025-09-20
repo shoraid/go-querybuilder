@@ -25,6 +25,10 @@ func (d PostgresDialect) Placeholder(n int) string {
 }
 
 func (d PostgresDialect) WrapColumn(expr string) string {
+	if expr == "" {
+		return ""
+	}
+
 	var sb strings.Builder
 	parts := strings.Fields(expr) // preserve original case but split cleanly
 	if len(parts) == 3 && strings.EqualFold(parts[1], "as") {
@@ -41,6 +45,10 @@ func (d PostgresDialect) WrapColumn(expr string) string {
 }
 
 func (d PostgresDialect) WrapIdentifier(id string) string {
+	if id == "" {
+		return ""
+	}
+
 	var sb strings.Builder
 	parts := strings.Split(id, ".")
 	for i, p := range parts {

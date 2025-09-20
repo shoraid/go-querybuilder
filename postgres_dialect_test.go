@@ -151,9 +151,9 @@ func TestPostgresDialect_WrapColumn(t *testing.T) {
 			expected: `"order-items"`,
 		},
 		{
-			name:     "should quote empty string",
+			name:     "should not quote empty string",
 			input:    "",
-			expected: `""`,
+			expected: "",
 		},
 	}
 
@@ -222,9 +222,9 @@ func TestPostgresDialect_WrapIdentifier(t *testing.T) {
 			expected: `"order-items"`,
 		},
 		{
-			name:     "should quote empty identifier",
+			name:     "should not quote empty identifier",
 			input:    "",
-			expected: `""`,
+			expected: "",
 		},
 	}
 
