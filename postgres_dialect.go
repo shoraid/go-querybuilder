@@ -140,9 +140,14 @@ func (d PostgresDialect) compileSelectClause(columns []column, globalArgs *[]any
 			switch col.queryType {
 			case QueryBasic:
 				sb.WriteString(d.WrapColumn(col.name))
+
 			case QueryRaw:
-				sb.WriteString(col.expr)
-				*globalArgs = append(*globalArgs, col.args...)
+				expr := col.expr
+				for _, arg := range col.args {
+					expr = strings.Replace(expr, "?", d.Placeholder(len(*globalArgs)+1), 1)
+					*globalArgs = append(*globalArgs, arg)
+				}
+				sb.WriteString(expr)
 			}
 		}
 	}
