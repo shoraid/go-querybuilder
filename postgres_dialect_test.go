@@ -1089,6 +1089,171 @@ func TestPostgresDialect_OrWhereBetween(t *testing.T) {
 	}
 }
 
+func TestPostgresDialect_WhereNotBetween(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build single basic not between clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereNotBetween("price", 10, 100)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" NOT BETWEEN $1 AND $2)`,
+			expectedArgs: []any{10, 100},
+		},
+		{
+			name: "should build multiple basic not between clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereNotBetween("price", 10, 100).
+					WhereNotBetween("weight", 1, 5)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" NOT BETWEEN $1 AND $2) AND ("weight" NOT BETWEEN $3 AND $4)`,
+			expectedArgs: []any{10, 100, 1, 5},
+		},
+		{
+			name: "should return error when column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereNotBetween("", 10, 100)
+			},
+			expectedError: "WHERE clause requires non-empty column",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhereNotBetween(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build single OR not between clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("quantity", ">", 5).
+					OrWhereNotBetween("price", 10, 100)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "quantity" > $1 OR ("price" NOT BETWEEN $2 AND $3)`,
+			expectedArgs: []any{5, 10, 100},
+		},
+		{
+			name: "should build multiple OR not between clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("quantity", ">", 5).
+					OrWhereNotBetween("price", 10, 100).
+					OrWhereNotBetween("weight", 1, 5)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "quantity" > $1 OR ("price" NOT BETWEEN $2 AND $3) OR ("weight" NOT BETWEEN $4 AND $5)`,
+			expectedArgs: []any{5, 10, 100, 1, 5},
+		},
+		{
+			name: "should treat leading OrWhereNotBetween as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					OrWhereNotBetween("price", 10, 100)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" NOT BETWEEN $1 AND $2)`,
+			expectedArgs: []any{10, 100},
+		},
+		{
+			name: "should return error when column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					OrWhereNotBetween("", 10, 100)
+			},
+			expectedError: "WHERE clause requires non-empty column",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
 func TestPostgresDialect_CompileSelect_Select_Where_In(t *testing.T) {
 	t.Parallel()
 
@@ -2341,6 +2506,58 @@ func BenchmarkPostgresDialect_WhereBetween(b *testing.B) {
 					WhereBetween("amount", 100, 500).
 					WhereBetween("discount", 5, 15).
 					OrWhereBetween("created_at", "2023-01-01", "2023-12-31")
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+				bm.build(bd)
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_WhereNotBetween(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "WhereNotBetween simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("products").
+					WhereNotBetween("price", 100, 200)
+			},
+		},
+		{
+			name: "OrWhereNotBetween simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("products").
+					Where("category_id", "=", 10).
+					OrWhereNotBetween("quantity", 1, 5)
+			},
+		},
+		{
+			name: "Multiple WhereNotBetween",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("orders").
+					WhereNotBetween("amount", 100, 500).
+					WhereNotBetween("discount", 5, 15).
+					OrWhereNotBetween("created_at", "2023-01-01", "2023-12-31")
 			},
 		},
 	}
