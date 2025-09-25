@@ -194,6 +194,11 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			}
 
 		case QueryBetween:
+			if w.column == "" {
+				return "", fmt.Errorf("WHERE clause requires non-empty column")
+			}
+
+			sb.WriteString("(")
 			sb.WriteString(d.WrapColumn(w.column))
 			sb.WriteString(" ")
 			sb.WriteString(w.operator)
@@ -201,6 +206,7 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(d.Placeholder(len(*globalArgs) + 1))
 			sb.WriteString(" AND ")
 			sb.WriteString(d.Placeholder(len(*globalArgs) + 2))
+			sb.WriteString(")")
 			*globalArgs = append(*globalArgs, w.args...)
 
 		case QueryNull:

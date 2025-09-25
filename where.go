@@ -25,26 +25,12 @@ func (b *builder) OrWhere(column string, operator string, value any) QueryBuilde
 }
 
 func (b *builder) WhereBetween(column string, from, to any) QueryBuilder {
-	b.wheres = append(b.wheres, where{
-		queryType: QueryBetween,
-		column:    column,
-		operator:  "BETWEEN",
-		conj:      "AND",
-		args:      []any{from, to},
-	})
-
+	b.addWhereBetween("AND", column, "BETWEEN", from, to)
 	return b
 }
 
 func (b *builder) OrWhereBetween(column string, from, to any) QueryBuilder {
-	b.wheres = append(b.wheres, where{
-		queryType: QueryBetween,
-		column:    column,
-		operator:  "BETWEEN",
-		conj:      "OR",
-		args:      []any{from, to},
-	})
-
+	b.addWhereBetween("OR", column, "BETWEEN", from, to)
 	return b
 }
 
@@ -70,6 +56,16 @@ func (b *builder) OrWhereNotBetween(column string, from, to any) QueryBuilder {
 	})
 
 	return b
+}
+
+func (b *builder) addWhereBetween(conj, column, operator string, from, to any) {
+	b.wheres = append(b.wheres, where{
+		queryType: QueryBetween,
+		conj:      conj,
+		column:    column,
+		operator:  operator,
+		args:      []any{from, to},
+	})
 }
 
 func (b *builder) WhereIn(column string, values []any) QueryBuilder {

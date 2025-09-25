@@ -924,54 +924,48 @@ func TestPostgresDialect_CompileSelect_Select_Where_Simple(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_Select_Where_Between(t *testing.T) {
+func TestPostgresDialect_WhereBetween(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name          string
-		table         string
-		wheres        []where
+		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
 		expectedError string
 	}{
 		{
-			name:  "should handle where conditions with BETWEEN operator",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBetween, column: "price", operator: "BETWEEN", args: []any{10, 100}},
+			name: "should build single basic between clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereBetween("price", 10, 100)
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "price" BETWEEN $1 AND $2`,
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" BETWEEN $1 AND $2)`,
 			expectedArgs: []any{10, 100},
 		},
 		{
-			name:  "should handle where conditions with NOT BETWEEN operator",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBetween, column: "price", operator: "NOT BETWEEN", args: []any{10, 100}},
+			name: "should build multiple basic between clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereBetween("price", 10, 100).
+					WhereBetween("weight", 1, 5)
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "price" NOT BETWEEN $1 AND $2`,
-			expectedArgs: []any{10, 100},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" BETWEEN $1 AND $2) AND ("weight" BETWEEN $3 AND $4)`,
+			expectedArgs: []any{10, 100, 1, 5},
 		},
 		{
-			name:  "should handle BETWEEN after previous WHERE condition",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{conj: "AND", queryType: QueryBetween, column: "price", operator: "BETWEEN", args: []any{10, 100}},
+			name: "should return error when column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereBetween("", 10, 100)
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "price" BETWEEN $2 AND $3`,
-			expectedArgs: []any{"electronics", 10, 100},
-		},
-		{
-			name:  "should handle NOT BETWEEN after previous WHERE condition",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{conj: "AND", queryType: QueryBetween, column: "price", operator: "NOT BETWEEN", args: []any{10, 100}},
-			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "price" NOT BETWEEN $2 AND $3`,
-			expectedArgs: []any{"electronics", 10, 100},
+			expectedError: "WHERE clause requires non-empty column",
 		},
 	}
 
@@ -982,12 +976,99 @@ func TestPostgresDialect_CompileSelect_Select_Where_Between(t *testing.T) {
 			// Arrange
 			b := &builder{
 				dialect: PostgresDialect{},
-				action:  "select",
-				table:   tt.table,
-				wheres:  tt.wheres,
 				limit:   -1,
 				offset:  -1,
 			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhereBetween(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build single OR between clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("quantity", ">", 5).
+					OrWhereBetween("price", 10, 100)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "quantity" > $1 OR ("price" BETWEEN $2 AND $3)`,
+			expectedArgs: []any{5, 10, 100},
+		},
+		{
+			name: "should build multiple OR between clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("quantity", ">", 5).
+					OrWhereBetween("price", 10, 100).
+					OrWhereBetween("weight", 1, 5)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "quantity" > $1 OR ("price" BETWEEN $2 AND $3) OR ("weight" BETWEEN $4 AND $5)`,
+			expectedArgs: []any{5, 10, 100, 1, 5},
+		},
+		{
+			name: "should treat leading OrWhereBetween as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					OrWhereBetween("price", 10, 100)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" BETWEEN $1 AND $2)`,
+			expectedArgs: []any{10, 100},
+		},
+		{
+			name: "should return error when column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					OrWhereBetween("", 10, 100)
+			},
+			expectedError: "WHERE clause requires non-empty column",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
 
 			// Act
 			sql, args, err := b.dialect.CompileSelect(b)
@@ -2227,21 +2308,55 @@ func BenchmarkPostgresDialect_CompileSelect_Select_Where_Simple(b *testing.B) {
 	}
 }
 
-func BenchmarkPostgresDialect_CompileSelect_Select_Where_Between(b *testing.B) {
-	d := PostgresDialect{}
-	builder := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "products",
-		wheres: []where{
-			{conj: "AND", queryType: QueryBetween, column: "price", operator: "BETWEEN", args: []any{10, 100}},
+func BenchmarkPostgresDialect_WhereBetween(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "WhereBetween simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("products").
+					WhereBetween("price", 100, 200)
+			},
 		},
-		limit:  -1,
-		offset: -1,
+		{
+			name: "OrWhereBetween simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("products").
+					Where("category_id", "=", 10).
+					OrWhereBetween("quantity", 1, 5)
+			},
+		},
+		{
+			name: "Multiple WhereBetween",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("orders").
+					WhereBetween("amount", 100, 500).
+					WhereBetween("discount", 5, 15).
+					OrWhereBetween("created_at", "2023-01-01", "2023-12-31")
+			},
+		},
 	}
 
-	for b.Loop() {
-		_, _, _ = d.CompileSelect(builder)
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+				bm.build(bd)
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
 	}
 }
 
