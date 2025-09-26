@@ -232,10 +232,14 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(w.operator)
 
 		case QueryRaw:
+			if w.expr == "" {
+				return "", fmt.Errorf("WHERE RAW clause requires a non-empty query")
+			}
+
 			expr := w.expr
-			for _, a := range w.args {
+			for _, arg := range w.args {
 				expr = strings.Replace(expr, "?", d.Placeholder(len(*globalArgs)+1), 1)
-				*globalArgs = append(*globalArgs, a)
+				*globalArgs = append(*globalArgs, arg)
 			}
 			sb.WriteString(expr)
 

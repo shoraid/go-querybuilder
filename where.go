@@ -119,25 +119,22 @@ func (b *builder) addWhereNull(conj, column, operator string) {
 }
 
 func (b *builder) WhereRaw(expr string, args ...any) QueryBuilder {
-	b.wheres = append(b.wheres, where{
-		queryType: QueryRaw,
-		expr:      expr,
-		conj:      "AND",
-		args:      args,
-	})
-
+	b.addWhereRaw("AND", expr, args...)
 	return b
 }
 
 func (b *builder) OrWhereRaw(expr string, args ...any) QueryBuilder {
+	b.addWhereRaw("OR", expr, args...)
+	return b
+}
+
+func (b *builder) addWhereRaw(conj, expr string, args ...any) {
 	b.wheres = append(b.wheres, where{
 		queryType: QueryRaw,
+		conj:      conj,
 		expr:      expr,
-		conj:      "OR",
 		args:      args,
 	})
-
-	return b
 }
 
 func (b *builder) WhereGroup(fn func(QueryBuilder)) QueryBuilder {

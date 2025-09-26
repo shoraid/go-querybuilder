@@ -920,11 +920,11 @@ func TestBuilder_WhereRaw(t *testing.T) {
 			initialWheres: []where{
 				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
 			},
-			expression: "created_at > NOW() - INTERVAL '1 day'",
-			args:       []any{},
+			expression: "created_at > ? - INTERVAL '1 day'",
+			args:       []any{"2025-09-25"},
 			expectedWheres: []where{
 				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
-				{queryType: QueryRaw, expr: "created_at > NOW() - INTERVAL '1 day'", conj: "AND", args: []any{}},
+				{queryType: QueryRaw, expr: "created_at > ? - INTERVAL '1 day'", conj: "AND", args: []any{"2025-09-25"}},
 			},
 		},
 		{
@@ -979,11 +979,11 @@ func TestBuilder_OrWhereRaw(t *testing.T) {
 			initialWheres: []where{
 				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
 			},
-			expression: "created_at < NOW() - INTERVAL '1 month'",
-			args:       []any{},
+			expression: "created_at < ? - INTERVAL '1 month'",
+			args:       []any{"2025-09-25"},
 			expectedWheres: []where{
 				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
-				{queryType: QueryRaw, expr: "created_at < NOW() - INTERVAL '1 month'", conj: "OR", args: []any{}},
+				{queryType: QueryRaw, expr: "created_at < ? - INTERVAL '1 month'", conj: "OR", args: []any{"2025-09-25"}},
 			},
 		},
 		{

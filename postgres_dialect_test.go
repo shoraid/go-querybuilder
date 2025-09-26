@@ -2302,45 +2302,84 @@ func TestPostgresDialect_OrWhereNotNull(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_Select_Where_Raw(t *testing.T) {
+func TestPostgresDialect_WhereRaw(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name          string
-		table         string
-		wheres        []where
+		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
 		expectedError string
 	}{
 		{
-			name:  "should handle raw where conditions",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryRaw, expr: "price > ? AND stock < ?", args: []any{50, 100}},
+			name: "should build raw where clause without args",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereRaw("id = 1")
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE price > $1 AND stock < $2`,
-			expectedArgs: []any{50, 100},
+			expectedSQL:  `SELECT * FROM "users" WHERE id = 1`,
+			expectedArgs: []any{},
 		},
 		{
-			name:  "should handle raw AND after previous WHERE condition",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{conj: "AND", queryType: QueryRaw, expr: "price > ? AND stock < ?", args: []any{50, 100}},
+			name: "should build raw where clause with single arg",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereRaw("name = ?", "John Doe")
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND price > $2 AND stock < $3`,
-			expectedArgs: []any{"electronics", 50, 100},
+			expectedSQL:  `SELECT * FROM "users" WHERE name = $1`,
+			expectedArgs: []any{"John Doe"},
 		},
 		{
-			name:  "should handle raw OR after previous WHERE condition",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{conj: "OR", queryType: QueryRaw, expr: "price > ? OR stock < ?", args: []any{50, 100}},
+			name: "should build raw where clause with multiple args",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereRaw("age BETWEEN ? AND ?", 20, 30)
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 OR price > $2 OR stock < $3`,
-			expectedArgs: []any{"electronics", 50, 100},
+			expectedSQL:  `SELECT * FROM "users" WHERE age BETWEEN $1 AND $2`,
+			expectedArgs: []any{20, 30},
+		},
+		{
+			name: "should combine raw where with other where clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					WhereRaw("created_at > ?", "2023-01-01")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 AND created_at > $2`,
+			expectedArgs: []any{"active", "2023-01-01"},
+		},
+		{
+			name: "should handle multiple raw where clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereRaw("status = 'active'").
+					WhereRaw("created_at > ?", "2023-01-01").
+					WhereRaw("age > ?", 25)
+
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE status = 'active' AND created_at > $1 AND age > $2`,
+			expectedArgs: []any{"2023-01-01", 25},
+		},
+		{
+			name: "should return error when raw query is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereRaw("")
+			},
+			expectedError: "WHERE RAW clause requires a non-empty query",
 		},
 	}
 
@@ -2351,12 +2390,123 @@ func TestPostgresDialect_CompileSelect_Select_Where_Raw(t *testing.T) {
 			// Arrange
 			b := &builder{
 				dialect: PostgresDialect{},
-				action:  "select",
-				table:   tt.table,
-				wheres:  tt.wheres,
 				limit:   -1,
 				offset:  -1,
 			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhereRaw(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build OR raw where clause without args",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereRaw("id = 1")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR id = 1`,
+			expectedArgs: []any{"inactive"},
+		},
+		{
+			name: "should build OR raw where clause with single arg",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereRaw("name = ?", "John Doe")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR name = $2`,
+			expectedArgs: []any{"inactive", "John Doe"},
+		},
+		{
+			name: "should build OR raw where clause with multiple args",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereRaw("age BETWEEN ? AND ?", 20, 30)
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR age BETWEEN $2 AND $3`,
+			expectedArgs: []any{"inactive", 20, 30},
+		},
+		{
+			name: "should handle multiple OR raw where clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereRaw("created_at > ?", "2023-01-01").
+					OrWhereRaw("age > ?", 25)
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR created_at > $2 OR age > $3`,
+			expectedArgs: []any{"inactive", "2023-01-01", 25},
+		},
+		{
+			name: "should treat leading OrWhereRaw as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrWhereRaw("id = ?", 1)
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE id = $1`,
+			expectedArgs: []any{1},
+		},
+		{
+			name: "should return error when raw query is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrWhereRaw("")
+			},
+			expectedError: "WHERE RAW clause requires a non-empty query",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
 
 			// Act
 			sql, args, err := b.dialect.CompileSelect(b)
@@ -3699,21 +3849,65 @@ func BenchmarkPostgresDialect_WhereNotNull(b *testing.B) {
 	}
 }
 
-func BenchmarkPostgresDialect_CompileSelect_Select_Where_Raw(b *testing.B) {
-	d := PostgresDialect{}
-	builder := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "products",
-		wheres: []where{
-			{conj: "AND", queryType: QueryRaw, expr: "price > ? AND stock < ?", args: []any{50, 100}},
+func BenchmarkPostgresDialect_WhereRaw(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "WhereRaw simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereRaw("id = 1")
+			},
 		},
-		limit:  -1,
-		offset: -1,
+		{
+			name: "WhereRaw with args",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereRaw("name = ?", "John Doe")
+			},
+		},
+		{
+			name: "OrWhereRaw with args",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereRaw("age BETWEEN ? AND ?", 20, 30)
+			},
+		},
+		{
+			name: "Multiple WhereRaw",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereRaw("status = 'active'").
+					WhereRaw("created_at > ?", "2023-01-01")
+			},
+		},
 	}
 
-	for b.Loop() {
-		_, _, _ = d.CompileSelect(builder)
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(bd)
+
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
 	}
 }
 
