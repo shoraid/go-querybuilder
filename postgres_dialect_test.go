@@ -1254,54 +1254,147 @@ func TestPostgresDialect_OrWhereNotBetween(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_Select_Where_In(t *testing.T) {
+func TestPostgresDialect_WhereIn(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name          string
-		table         string
-		wheres        []where
+		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
 		expectedError string
 	}{
 		{
-			name:  "should handle where conditions with IN operator",
-			table: "orders",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "status", operator: "IN", args: []any{[]any{"pending", "processing"}}},
+			name: "should build IN clause with single value on customers",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("customers").
+					WhereIn("id", 1)
 			},
-			expectedSQL:  `SELECT * FROM "orders" WHERE "status" IN ($1, $2)`,
-			expectedArgs: []any{"pending", "processing"},
+			expectedSQL:  `SELECT * FROM "customers" WHERE "id" IN ($1)`,
+			expectedArgs: []any{1},
 		},
 		{
-			name:  "should handle where conditions with NOT IN operator",
-			table: "orders",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "status", operator: "NOT IN", args: []any{[]any{"cancelled", "failed"}}},
+			name: "should build IN clause with multiple values on orders",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("orders").
+					WhereIn("id", 101, 102, 103)
 			},
-			expectedSQL:  `SELECT * FROM "orders" WHERE "status" NOT IN ($1, $2)`,
-			expectedArgs: []any{"cancelled", "failed"},
+			expectedSQL:  `SELECT * FROM "orders" WHERE "id" IN ($1, $2, $3)`,
+			expectedArgs: []any{101, 102, 103},
 		},
 		{
-			name:  "should handle IN after previous WHERE condition",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{conj: "AND", queryType: QueryBasic, column: "id", operator: "IN", args: []any{[]any{1, 2, 3}}},
+			name: "should build multiple IN clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereIn("category_id", 1, 2).
+					WhereIn("status", "active", "pending")
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "id" IN ($2, $3, $4)`,
-			expectedArgs: []any{"electronics", 1, 2, 3},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" IN ($1, $2) AND "status" IN ($3, $4)`,
+			expectedArgs: []any{1, 2, "active", "pending"},
 		},
 		{
-			name:  "should handle NOT IN after previous WHERE condition",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{conj: "AND", queryType: QueryBasic, column: "id", operator: "NOT IN", args: []any{[]any{4, 5, 6}}},
+			name: "should build IN clause from single slice on products",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereIn("category_id", []int{11, 12, 13})
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "id" NOT IN ($2, $3, $4)`,
-			expectedArgs: []any{"electronics", 4, 5, 6},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" IN ($1, $2, $3)`,
+			expectedArgs: []any{11, 12, 13},
+		},
+		{
+			name: "should build IN clause from multiple slices on employees",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("employees").
+					WhereIn("department_id", []int{1, 2}, []string{"HR", "Finance"})
+			},
+			expectedSQL:  `SELECT * FROM "employees" WHERE "department_id" IN ($1, $2, $3, $4)`,
+			expectedArgs: []any{1, 2, "HR", "Finance"},
+		},
+		{
+			name: "should build IN clause from mixed values and slice on invoices",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("invoices").
+					WhereIn("status", "paid", []string{"pending", "overdue"})
+			},
+			expectedSQL:  `SELECT * FROM "invoices" WHERE "status" IN ($1, $2, $3)`,
+			expectedArgs: []any{"paid", "pending", "overdue"},
+		},
+		{
+			name: "should build IN clause with boolean values on accounts",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("accounts").
+					WhereIn("is_verified", true, false)
+			},
+			expectedSQL:  `SELECT * FROM "accounts" WHERE "is_verified" IN ($1, $2)`,
+			expectedArgs: []any{true, false},
+		},
+		{
+			name: "should replace empty slice with 1=0 on shipments",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("shipments").
+					Where("carrier", "=", "DHL").
+					WhereIn("tracking_number", []any{})
+			},
+			expectedSQL:  `SELECT * FROM "shipments" WHERE "carrier" = $1 AND 1 = 0`,
+			expectedArgs: []any{"DHL"},
+		},
+		{
+			name: "should return error when column name is empty on warehouses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("warehouses").
+					WhereIn("", 1, 2)
+			},
+			expectedError: "WHERE clause requires non-empty column",
+		},
+		{
+			name: "should return error when nil is passed directly on products",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					WhereIn("status", nil, "active")
+			},
+			expectedError: "IN clause does not support nil, use IS NULL instead",
+		},
+		{
+			name: "should return error when slice contains nil on customers",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("customers").
+					Where("country", "=", "US").
+					WhereIn("segment", []any{"premium", nil})
+			},
+			expectedError: "IN clause contains nil value in slice, use IS NULL instead",
+		},
+		{
+			name: "should return error when nested slice is passed on suppliers",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("suppliers").
+					WhereIn("id", [][]int{{1, 2}})
+			},
+			expectedError: "IN clause does not support nested slices",
 		},
 	}
 
@@ -1312,12 +1405,553 @@ func TestPostgresDialect_CompileSelect_Select_Where_In(t *testing.T) {
 			// Arrange
 			b := &builder{
 				dialect: PostgresDialect{},
-				action:  "select",
-				table:   tt.table,
-				wheres:  tt.wheres,
 				limit:   -1,
 				offset:  -1,
 			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhereIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build OR IN clause with single value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("customers").
+					Where("country", "=", "US").
+					OrWhereIn("id", 1)
+			},
+			expectedSQL:  `SELECT * FROM "customers" WHERE "country" = $1 OR "id" IN ($2)`,
+			expectedArgs: []any{"US", 1},
+		},
+		{
+			name: "should build OR IN clause with multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("orders").
+					Where("status", "=", "pending").
+					OrWhereIn("id", 101, 102, 103)
+			},
+			expectedSQL:  `SELECT * FROM "orders" WHERE "status" = $1 OR "id" IN ($2, $3, $4)`,
+			expectedArgs: []any{"pending", 101, 102, 103},
+		},
+		{
+			name: "should build multiple OR IN clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "=", 1).
+					OrWhereIn("unit_id", 1, 2).
+					OrWhereIn("status", "active", "pending")
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" = $1 OR "unit_id" IN ($2, $3) OR "status" IN ($4, $5)`,
+			expectedArgs: []any{1, 1, 2, "active", "pending"},
+		},
+		{
+			name: "should build OR IN clause from single slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 50).
+					OrWhereIn("category_id", []int{11, 12, 13})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" IN ($2, $3, $4)`,
+			expectedArgs: []any{50, 11, 12, 13},
+		},
+		{
+			name: "should build OR IN clause from multiple slices",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("employees").
+					Where("active", "=", true).
+					OrWhereIn("department_id", []int{1, 2}, []string{"HR", "Finance"})
+			},
+			expectedSQL:  `SELECT * FROM "employees" WHERE "active" = $1 OR "department_id" IN ($2, $3, $4, $5)`,
+			expectedArgs: []any{true, 1, 2, "HR", "Finance"},
+		},
+		{
+			name: "should build OR IN clause from mixed values and slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("invoices").
+					Where("amount", ">", 1000).
+					OrWhereIn("status", "paid", []string{"pending", "overdue"})
+			},
+			expectedSQL:  `SELECT * FROM "invoices" WHERE "amount" > $1 OR "status" IN ($2, $3, $4)`,
+			expectedArgs: []any{1000, "paid", "pending", "overdue"},
+		},
+		{
+			name: "should build OR IN clause with boolean values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("accounts").
+					Where("created_at", ">", "2023-01-01").
+					OrWhereIn("is_verified", true, false)
+			},
+			expectedSQL:  `SELECT * FROM "accounts" WHERE "created_at" > $1 OR "is_verified" IN ($2, $3)`,
+			expectedArgs: []any{"2023-01-01", true, false},
+		},
+		{
+			name: "should replace empty slice with 1=0 in OR clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("shipments").
+					Where("carrier", "=", "DHL").
+					OrWhereIn("tracking_number", []any{})
+			},
+			expectedSQL:  `SELECT * FROM "shipments" WHERE "carrier" = $1 OR 1 = 0`,
+			expectedArgs: []any{"DHL"},
+		},
+		{
+			name: "should return error when column name is empty in OR clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("warehouses").
+					Where("location", "=", "NYC").
+					OrWhereIn("", 1, 2)
+			},
+			expectedError: "WHERE clause requires non-empty column",
+		},
+		{
+			name: "should return error when nil is passed directly in OR clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhereIn("status", nil, "active")
+			},
+			expectedError: "IN clause does not support nil, use IS NULL instead",
+		},
+		{
+			name: "should return error when slice contains nil in OR clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("customers").
+					Where("country", "=", "US").
+					OrWhereIn("segment", []any{"premium", nil})
+			},
+			expectedError: "IN clause contains nil value in slice, use IS NULL instead",
+		},
+		{
+			name: "should return error when nested slice is passed in OR clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("suppliers").
+					Where("active", "=", true).
+					OrWhereIn("id", [][]int{{1, 2}})
+			},
+			expectedError: "IN clause does not support nested slices",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_WhereNotIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build NOT IN clause with single value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("customers").
+					WhereNotIn("id", 1)
+			},
+			expectedSQL:  `SELECT * FROM "customers" WHERE "id" NOT IN ($1)`,
+			expectedArgs: []any{1},
+		},
+		{
+			name: "should build NOT IN clause with multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("orders").
+					WhereNotIn("id", 101, 102, 103)
+			},
+			expectedSQL:  `SELECT * FROM "orders" WHERE "id" NOT IN ($1, $2, $3)`,
+			expectedArgs: []any{101, 102, 103},
+		},
+		{
+			name: "should build multiple NOT IN clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereNotIn("category_id", 1, 2).
+					WhereNotIn("status", "inactive", "archived")
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" NOT IN ($1, $2) AND "status" NOT IN ($3, $4)`,
+			expectedArgs: []any{1, 2, "inactive", "archived"},
+		},
+		{
+			name: "should build NOT IN clause from single slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereNotIn("category_id", []int{11, 12, 13})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" NOT IN ($1, $2, $3)`,
+			expectedArgs: []any{11, 12, 13},
+		},
+		{
+			name: "should build NOT IN clause from multiple slices",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("employees").
+					WhereNotIn("department_id", []int{1, 2}, []string{"HR", "Finance"})
+			},
+			expectedSQL:  `SELECT * FROM "employees" WHERE "department_id" NOT IN ($1, $2, $3, $4)`,
+			expectedArgs: []any{1, 2, "HR", "Finance"},
+		},
+		{
+			name: "should build NOT IN clause from mixed values and slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("invoices").
+					WhereNotIn("status", "paid", []string{"pending", "overdue"})
+			},
+			expectedSQL:  `SELECT * FROM "invoices" WHERE "status" NOT IN ($1, $2, $3)`,
+			expectedArgs: []any{"paid", "pending", "overdue"},
+		},
+		{
+			name: "should build NOT IN clause with boolean values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("accounts").
+					WhereNotIn("is_verified", true, false)
+			},
+			expectedSQL:  `SELECT * FROM "accounts" WHERE "is_verified" NOT IN ($1, $2)`,
+			expectedArgs: []any{true, false},
+		},
+		{
+			name: "should replace empty slice with 1=1",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("shipments").
+					Where("carrier", "=", "DHL").
+					WhereNotIn("tracking_number", []any{})
+			},
+			expectedSQL:  `SELECT * FROM "shipments" WHERE "carrier" = $1 AND 1 = 1`,
+			expectedArgs: []any{"DHL"},
+		},
+		{
+			name: "should return error when column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("warehouses").
+					WhereNotIn("", 1, 2)
+			},
+			expectedError: "WHERE clause requires non-empty column",
+		},
+		{
+			name: "should return error when nil is passed directly",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					WhereNotIn("status", nil, "active")
+			},
+			expectedError: "IN clause does not support nil, use IS NULL instead",
+		},
+		{
+			name: "should return error when slice contains nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("customers").
+					Where("country", "=", "US").
+					WhereNotIn("segment", []any{"premium", nil})
+			},
+			expectedError: "IN clause contains nil value in slice, use IS NULL instead",
+		},
+		{
+			name: "should return error when nested slice is passed",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("suppliers").
+					WhereNotIn("id", [][]int{{1, 2}})
+			},
+			expectedError: "IN clause does not support nested slices",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhereNotIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build OR NOT IN clause with single value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("customers").
+					Where("country", "=", "US").
+					OrWhereNotIn("id", 1)
+			},
+			expectedSQL:  `SELECT * FROM "customers" WHERE "country" = $1 OR "id" NOT IN ($2)`,
+			expectedArgs: []any{"US", 1},
+		},
+		{
+			name: "should build OR NOT IN clause with multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("orders").
+					Where("status", "=", "pending").
+					OrWhereNotIn("id", 101, 102, 103)
+			},
+			expectedSQL:  `SELECT * FROM "orders" WHERE "status" = $1 OR "id" NOT IN ($2, $3, $4)`,
+			expectedArgs: []any{"pending", 101, 102, 103},
+		},
+		{
+			name: "should build multiple OR NOT IN clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "=", 1).
+					OrWhereNotIn("unit_id", 1, 2).
+					OrWhereNotIn("status", "inactive", "archived")
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" = $1 OR "unit_id" NOT IN ($2, $3) OR "status" NOT IN ($4, $5)`,
+			expectedArgs: []any{1, 1, 2, "inactive", "archived"},
+		},
+		{
+			name: "should build OR NOT IN clause from single slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 50).
+					OrWhereNotIn("category_id", []int{11, 12, 13})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" NOT IN ($2, $3, $4)`,
+			expectedArgs: []any{50, 11, 12, 13},
+		},
+		{
+			name: "should build OR NOT IN clause from multiple slices",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("employees").
+					Where("active", "=", true).
+					OrWhereNotIn("department_id", []int{1, 2}, []string{"HR", "Finance"})
+			},
+			expectedSQL:  `SELECT * FROM "employees" WHERE "active" = $1 OR "department_id" NOT IN ($2, $3, $4, $5)`,
+			expectedArgs: []any{true, 1, 2, "HR", "Finance"},
+		},
+		{
+			name: "should build OR NOT IN clause from mixed values and slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("invoices").
+					Where("amount", ">", 1000).
+					OrWhereNotIn("status", "paid", []string{"pending", "overdue"})
+			},
+			expectedSQL:  `SELECT * FROM "invoices" WHERE "amount" > $1 OR "status" NOT IN ($2, $3, $4)`,
+			expectedArgs: []any{1000, "paid", "pending", "overdue"},
+		},
+		{
+			name: "should build OR NOT IN clause with boolean values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("accounts").
+					Where("created_at", ">", "2023-01-01").
+					OrWhereNotIn("is_verified", true, false)
+			},
+			expectedSQL:  `SELECT * FROM "accounts" WHERE "created_at" > $1 OR "is_verified" NOT IN ($2, $3)`,
+			expectedArgs: []any{"2023-01-01", true, false},
+		},
+		{
+			name: "should replace empty slice with 1=1 in OR NOT IN clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("shipments").
+					Where("carrier", "=", "DHL").
+					OrWhereNotIn("tracking_number", []any{})
+			},
+			expectedSQL:  `SELECT * FROM "shipments" WHERE "carrier" = $1 OR 1 = 1`,
+			expectedArgs: []any{"DHL"},
+		},
+		{
+			name: "should return error when column name is empty in OR NOT IN clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("warehouses").
+					Where("location", "=", "NYC").
+					OrWhereNotIn("", 1, 2)
+			},
+			expectedError: "WHERE clause requires non-empty column",
+		},
+		{
+			name: "should return error when nil is passed directly in OR NOT IN clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhereNotIn("status", nil, "active")
+			},
+			expectedError: "IN clause does not support nil, use IS NULL instead",
+		},
+		{
+			name: "should return error when slice contains nil in OR NOT IN clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("customers").
+					Where("country", "=", "US").
+					OrWhereNotIn("segment", []any{"premium", nil})
+			},
+			expectedError: "IN clause contains nil value in slice, use IS NULL instead",
+		},
+		{
+			name: "should return error when nested slice is passed in OR NOT IN clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("suppliers").
+					Where("active", "=", true).
+					OrWhereNotIn("id", [][]int{{1, 2}})
+			},
+			expectedError: "IN clause does not support nested slices",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
 
 			// Act
 			sql, args, err := b.dialect.CompileSelect(b)
@@ -2558,6 +3192,142 @@ func BenchmarkPostgresDialect_WhereNotBetween(b *testing.B) {
 					WhereNotBetween("amount", 100, 500).
 					WhereNotBetween("discount", 5, 15).
 					OrWhereNotBetween("created_at", "2023-01-01", "2023-12-31")
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+				bm.build(bd)
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_WhereIn(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "WhereIn single value",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("customers").
+					WhereIn("id", 1)
+			},
+		},
+		{
+			name: "WhereIn multiple values",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("orders").
+					WhereIn("id", 101, 102, 103)
+			},
+		},
+		{
+			name: "OrWhereIn multiple values",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("products").
+					Where("category_id", "=", 1).
+					OrWhereIn("unit_id", 1, 2)
+			},
+		},
+		{
+			name: "WhereIn from slice",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("products").
+					WhereIn("category_id", []int{11, 12, 13})
+			},
+		},
+		{
+			name: "WhereIn empty slice",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("shipments").
+					WhereIn("tracking_number", []any{})
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+				bm.build(bd)
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_WhereNotIn(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "WhereNotIn single value",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("customers").
+					WhereNotIn("id", 1)
+			},
+		},
+		{
+			name: "WhereNotIn multiple values",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("orders").
+					WhereNotIn("id", 101, 102, 103)
+			},
+		},
+		{
+			name: "OrWhereNotIn multiple values",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("products").
+					Where("category_id", "=", 1).
+					OrWhereNotIn("unit_id", 1, 2)
+			},
+		},
+		{
+			name: "WhereNotIn from slice",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("products").
+					WhereNotIn("category_id", []int{11, 12, 13})
+			},
+		},
+		{
+			name: "WhereNotIn empty slice",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("shipments").
+					WhereNotIn("tracking_number", []any{})
 			},
 		},
 	}

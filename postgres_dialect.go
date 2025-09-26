@@ -2,6 +2,7 @@ package sequel
 
 import (
 	"fmt"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -209,6 +210,18 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(")")
 			*globalArgs = append(*globalArgs, w.args...)
 
+		case QueryIn:
+			if w.column == "" {
+				return "", fmt.Errorf("WHERE clause requires non-empty column")
+			}
+
+			inClause, err := d.handleWhereIn(w, globalArgs)
+			if err != nil {
+				return "", err
+			}
+
+			sb.WriteString(inClause)
+
 		case QueryNull:
 			sb.WriteString(d.WrapColumn(w.column))
 			sb.WriteString(" ")
@@ -264,6 +277,61 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(")")
 		}
 	}
+
+	return sb.String(), nil
+}
+
+func (d PostgresDialect) handleWhereIn(w where, globalArgs *[]any) (string, error) {
+	flatArgs := make([]any, 0)
+
+	for _, v := range w.args {
+		if v == nil {
+			return "", fmt.Errorf("IN clause does not support nil, use IS NULL instead")
+		}
+
+		rv := reflect.ValueOf(v)
+		switch rv.Kind() {
+		case reflect.Slice, reflect.Array:
+			for i := 0; i < rv.Len(); i++ {
+				elem := rv.Index(i).Interface()
+				if elem == nil {
+					return "", fmt.Errorf("IN clause contains nil value in slice, use IS NULL instead")
+				}
+				ev := reflect.ValueOf(elem)
+				if ev.Kind() == reflect.Slice || ev.Kind() == reflect.Array {
+					return "", fmt.Errorf("IN clause does not support nested slices")
+				}
+				flatArgs = append(flatArgs, elem)
+			}
+		default:
+			flatArgs = append(flatArgs, v)
+		}
+	}
+
+	var sb strings.Builder
+
+	if len(flatArgs) == 0 {
+		if w.operator == "NOT IN" {
+			sb.WriteString("1 = 1")
+		} else {
+			sb.WriteString("1 = 0")
+		}
+		return sb.String(), nil
+	}
+
+	sb.WriteString(d.WrapColumn(w.column))
+	sb.WriteString(" ")
+	sb.WriteString(w.operator)
+	sb.WriteString(" (")
+
+	for i := range flatArgs {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(d.Placeholder(len(*globalArgs) + i + 1))
+	}
+	sb.WriteString(")")
+	*globalArgs = append(*globalArgs, flatArgs...)
 
 	return sb.String(), nil
 }

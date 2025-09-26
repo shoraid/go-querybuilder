@@ -54,52 +54,38 @@ func (b *builder) addWhereBetween(conj, column, operator string, from, to any) {
 	})
 }
 
-func (b *builder) WhereIn(column string, values []any) QueryBuilder {
-	b.wheres = append(b.wheres, where{
-		queryType: QueryBasic,
-		column:    column,
-		operator:  "IN",
-		conj:      "AND",
-		args:      []any{values},
-	})
-
+func (b *builder) WhereIn(column string, values ...any) QueryBuilder {
+	b.addWhereIn("AND", column, "IN", values...)
 	return b
 }
 
-func (b *builder) OrWhereIn(column string, values []any) QueryBuilder {
-	b.wheres = append(b.wheres, where{
-		queryType: QueryBasic,
-		column:    column,
-		operator:  "IN",
-		conj:      "OR",
-		args:      []any{values},
-	})
-
+func (b *builder) OrWhereIn(column string, values ...any) QueryBuilder {
+	b.addWhereIn("OR", column, "IN", values...)
 	return b
 }
 
-func (b *builder) WhereNotIn(column string, values []any) QueryBuilder {
-	b.wheres = append(b.wheres, where{
-		queryType: QueryBasic,
-		column:    column,
-		operator:  "NOT IN",
-		conj:      "AND",
-		args:      []any{values},
-	})
-
+func (b *builder) WhereNotIn(column string, values ...any) QueryBuilder {
+	b.addWhereIn("AND", column, "NOT IN", values...)
 	return b
 }
 
-func (b *builder) OrWhereNotIn(column string, values []any) QueryBuilder {
-	b.wheres = append(b.wheres, where{
-		queryType: QueryBasic,
-		column:    column,
-		operator:  "NOT IN",
-		conj:      "OR",
-		args:      []any{values},
-	})
-
+func (b *builder) OrWhereNotIn(column string, values ...any) QueryBuilder {
+	b.addWhereIn("OR", column, "NOT IN", values...)
 	return b
+}
+
+func (b *builder) addWhereIn(conj, column, operator string, values ...any) {
+	if values == nil {
+		values = []any{}
+	}
+
+	b.wheres = append(b.wheres, where{
+		queryType: QueryIn,
+		conj:      conj,
+		column:    column,
+		operator:  operator,
+		args:      values,
+	})
 }
 
 func (b *builder) WhereNull(column string) QueryBuilder {

@@ -22,10 +22,10 @@ type QueryBuilder interface {
 	WhereNotBetween(column string, from, to any) QueryBuilder
 	OrWhereNotBetween(column string, from, to any) QueryBuilder
 
-	WhereIn(column string, values []any) QueryBuilder
-	OrWhereIn(column string, values []any) QueryBuilder
-	WhereNotIn(column string, values []any) QueryBuilder
-	OrWhereNotIn(column string, values []any) QueryBuilder
+	WhereIn(column string, values ...any) QueryBuilder
+	OrWhereIn(column string, values ...any) QueryBuilder
+	WhereNotIn(column string, values ...any) QueryBuilder
+	OrWhereNotIn(column string, values ...any) QueryBuilder
 
 	WhereNull(column string) QueryBuilder
 	OrWhereNull(column string) QueryBuilder
@@ -61,10 +61,11 @@ type QueryType uint8
 const (
 	QueryBasic   QueryType = 1
 	QueryBetween QueryType = 2
-	QueryNested  QueryType = 3
-	QueryNull    QueryType = 4
-	QueryRaw     QueryType = 5
-	QuerySub     QueryType = 6
+	QueryIn      QueryType = 3
+	QueryNested  QueryType = 4
+	QueryNull    QueryType = 5
+	QueryRaw     QueryType = 6
+	QuerySub     QueryType = 7
 )
 
 type column struct {
