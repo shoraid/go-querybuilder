@@ -223,6 +223,10 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(inClause)
 
 		case QueryNull:
+			if w.column == "" {
+				return "", fmt.Errorf("WHERE clause requires non-empty column")
+			}
+
 			sb.WriteString(d.WrapColumn(w.column))
 			sb.WriteString(" ")
 			sb.WriteString(w.operator)

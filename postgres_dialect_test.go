@@ -1972,54 +1972,48 @@ func TestPostgresDialect_OrWhereNotIn(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_Select_Where_Null(t *testing.T) {
+func TestPostgresDialect_WhereNull(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name          string
-		table         string
-		wheres        []where
+		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
 		expectedError string
 	}{
 		{
-			name:  "should handle where conditions with IS NULL operator",
-			table: "users",
-			wheres: []where{
-				{conj: "AND", queryType: QueryNull, column: "email", operator: "IS NULL", args: []any{}},
+			name: "should build single IS NULL clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereNull("email")
 			},
 			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NULL`,
 			expectedArgs: []any{},
 		},
 		{
-			name:  "should handle where conditions with IS NOT NULL operator",
-			table: "users",
-			wheres: []where{
-				{conj: "AND", queryType: QueryNull, column: "email", operator: "IS NOT NULL", args: []any{}},
+			name: "should build multiple IS NULL clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereNull("email").
+					WhereNull("phone")
 			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NOT NULL`,
+			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NULL AND "phone" IS NULL`,
 			expectedArgs: []any{},
 		},
 		{
-			name:  "should handle IS NULL after previous WHERE condition",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{conj: "AND", queryType: QueryNull, column: "description", operator: "IS NULL", args: []any{}},
+			name: "should return error when column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereNull("")
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "description" IS NULL`,
-			expectedArgs: []any{"electronics"},
-		},
-		{
-			name:  "should handle IS NOT NULL after previous WHERE condition",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{conj: "AND", queryType: QueryNull, column: "description", operator: "IS NOT NULL", args: []any{}},
-			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "description" IS NOT NULL`,
-			expectedArgs: []any{"electronics"},
+			expectedError: "WHERE clause requires non-empty column",
 		},
 	}
 
@@ -2030,12 +2024,264 @@ func TestPostgresDialect_CompileSelect_Select_Where_Null(t *testing.T) {
 			// Arrange
 			b := &builder{
 				dialect: PostgresDialect{},
-				action:  "select",
-				table:   tt.table,
-				wheres:  tt.wheres,
 				limit:   -1,
 				offset:  -1,
 			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhereNull(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build single OR IS NULL clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "pending").
+					OrWhereNull("email")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR "email" IS NULL`,
+			expectedArgs: []any{"pending"},
+		},
+		{
+			name: "should build multiple OR IS NULL clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "pending").
+					OrWhereNull("email").
+					OrWhereNull("phone")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR "email" IS NULL OR "phone" IS NULL`,
+			expectedArgs: []any{"pending"},
+		},
+		{
+			name: "should treat leading OrWhereNull as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrWhereNull("email")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NULL`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should return error when column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrWhereNull("")
+			},
+			expectedError: "WHERE clause requires non-empty column",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_WhereNotNull(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build single IS NOT NULL clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereNotNull("email")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NOT NULL`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build multiple IS NOT NULL clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereNotNull("email").
+					WhereNotNull("phone")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NOT NULL AND "phone" IS NOT NULL`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should return error when column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereNotNull("")
+			},
+			expectedError: "WHERE clause requires non-empty column",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhereNotNull(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build single OR IS NOT NULL clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "pending").
+					OrWhereNotNull("email")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR "email" IS NOT NULL`,
+			expectedArgs: []any{"pending"},
+		},
+		{
+			name: "should build multiple OR IS NOT NULL clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "pending").
+					OrWhereNotNull("email").
+					OrWhereNotNull("phone")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR "email" IS NOT NULL OR "phone" IS NOT NULL`,
+			expectedArgs: []any{"pending"},
+		},
+		{
+			name: "should treat leading OrWhereNotNull as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrWhereNotNull("email")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NOT NULL`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should return error when column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrWhereNotNull("")
+			},
+			expectedError: "WHERE clause requires non-empty column",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
 
 			// Act
 			sql, args, err := b.dialect.CompileSelect(b)
@@ -3347,39 +3593,109 @@ func BenchmarkPostgresDialect_WhereNotIn(b *testing.B) {
 	}
 }
 
-func BenchmarkPostgresDialect_CompileSelect_Select_Where_In(b *testing.B) {
-	d := PostgresDialect{}
-	builder := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "orders",
-		wheres: []where{
-			{conj: "AND", queryType: QueryBasic, column: "status", operator: "IN", args: []any{[]any{"pending", "processing", "completed"}}},
+func BenchmarkPostgresDialect_WhereNull(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "WhereNull simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereNull("email")
+			},
 		},
-		limit:  -1,
-		offset: -1,
+		{
+			name: "OrWhereNull simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					Where("status", "=", "pending").
+					OrWhereNull("email")
+			},
+		},
+		{
+			name: "Multiple WhereNull",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereNull("email").
+					WhereNull("phone")
+			},
+		},
 	}
 
-	for b.Loop() {
-		_, _, _ = d.CompileSelect(builder)
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(bd)
+
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
 	}
 }
 
-func BenchmarkPostgresDialect_CompileSelect_Select_Where_Null(b *testing.B) {
-	d := PostgresDialect{}
-	builder := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "users",
-		wheres: []where{
-			{conj: "AND", queryType: QueryNull, column: "email", operator: "IS NULL", args: []any{}},
+func BenchmarkPostgresDialect_WhereNotNull(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "WhereNotNull simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereNotNull("email")
+			},
 		},
-		limit:  -1,
-		offset: -1,
+		{
+			name: "OrWhereNotNull simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					Where("status", "=", "pending").
+					OrWhereNotNull("email")
+			},
+		},
+		{
+			name: "Multiple WhereNotNull",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereNotNull("email").
+					WhereNotNull("phone")
+			},
+		},
 	}
 
-	for b.Loop() {
-		_, _, _ = d.CompileSelect(builder)
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(bd)
+
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
 	}
 }
 

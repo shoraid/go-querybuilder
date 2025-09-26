@@ -89,51 +89,33 @@ func (b *builder) addWhereIn(conj, column, operator string, values ...any) {
 }
 
 func (b *builder) WhereNull(column string) QueryBuilder {
-	b.wheres = append(b.wheres, where{
-		queryType: QueryNull,
-		column:    column,
-		operator:  "IS NULL",
-		conj:      "AND",
-		args:      []any{},
-	})
-
+	b.addWhereNull("AND", column, "IS NULL")
 	return b
 }
 
 func (b *builder) OrWhereNull(column string) QueryBuilder {
-	b.wheres = append(b.wheres, where{
-		queryType: QueryNull,
-		column:    column,
-		operator:  "IS NULL",
-		conj:      "OR",
-		args:      []any{},
-	})
-
+	b.addWhereNull("OR", column, "IS NULL")
 	return b
 }
 
 func (b *builder) WhereNotNull(column string) QueryBuilder {
-	b.wheres = append(b.wheres, where{
-		queryType: QueryNull,
-		column:    column,
-		operator:  "IS NOT NULL",
-		conj:      "AND",
-		args:      []any{},
-	})
-
+	b.addWhereNull("AND", column, "IS NOT NULL")
 	return b
 }
 
 func (b *builder) OrWhereNotNull(column string) QueryBuilder {
+	b.addWhereNull("OR", column, "IS NOT NULL")
+	return b
+}
+
+func (b *builder) addWhereNull(conj, column, operator string) {
 	b.wheres = append(b.wheres, where{
 		queryType: QueryNull,
+		conj:      conj,
 		column:    column,
-		operator:  "IS NOT NULL",
-		conj:      "OR",
+		operator:  operator,
 		args:      []any{},
 	})
-
-	return b
 }
 
 func (b *builder) WhereRaw(expr string, args ...any) QueryBuilder {
