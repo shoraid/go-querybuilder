@@ -138,33 +138,26 @@ func (b *builder) addWhereRaw(conj, expr string, args ...any) {
 }
 
 func (b *builder) WhereGroup(fn func(QueryBuilder)) QueryBuilder {
-	nestedBuilder := New(b.dialect).(*builder)
-	fn(nestedBuilder)
-
-	if len(nestedBuilder.wheres) > 0 {
-		b.wheres = append(b.wheres, where{
-			queryType: QueryNested,
-			conj:      "AND",
-			nested:    nestedBuilder.wheres,
-		})
-	}
-
+	b.addWhereGroup("AND", fn)
 	return b
 }
 
 func (b *builder) OrWhereGroup(fn func(QueryBuilder)) QueryBuilder {
+	b.addWhereGroup("OR", fn)
+	return b
+}
+
+func (b *builder) addWhereGroup(conj string, fn func(QueryBuilder)) {
 	nestedBuilder := New(b.dialect).(*builder)
 	fn(nestedBuilder)
 
 	if len(nestedBuilder.wheres) > 0 {
 		b.wheres = append(b.wheres, where{
 			queryType: QueryNested,
-			conj:      "OR",
+			conj:      conj,
 			nested:    nestedBuilder.wheres,
 		})
 	}
-
-	return b
 }
 
 func (b *builder) WhereSub(column, operator string, fn func(QueryBuilder)) QueryBuilder {

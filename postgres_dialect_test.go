@@ -1,8 +1,6 @@
 package sequel
 
 import (
-	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -2527,177 +2525,155 @@ func TestPostgresDialect_OrWhereRaw(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_Select_Where_Group(t *testing.T) {
+func TestPostgresDialect_WhereGroup(t *testing.T) {
 	t.Parallel()
-
-	var generateDeepNestedWhere func(level int, startValue int) where
-	generateDeepNestedWhere = func(level int, startValue int) where {
-		if level == 1 {
-			return where{queryType: QueryBasic, column: fmt.Sprintf("col_%d", level), operator: "=", args: []any{startValue}}
-		}
-		return where{
-			queryType: QueryNested,
-			nested: []where{
-				generateDeepNestedWhere(level-1, startValue),
-				{conj: "AND", queryType: QueryBasic, column: fmt.Sprintf("col_%d", level), operator: "=", args: []any{startValue + level - 1}},
-			},
-		}
-	}
-
-	generateExpectedSQL := func(level int) string {
-		sql := ""
-		for i := 1; i < level; i++ {
-			sql += "("
-		}
-		sql += `"col_1" = $1`
-		for i := 2; i <= level; i++ {
-			sql += fmt.Sprintf(` AND "col_%d" = $%d)`, i, i)
-		}
-		return fmt.Sprintf(`SELECT * FROM "items" WHERE %s`, sql)
-	}
-
-	generateExpectedArgs := func(level int) []any {
-		args := make([]any, level)
-		for i := 1; i <= level; i++ {
-			args[i-1] = i
-		}
-		return args
-	}
-
-	// For 15-level mix of IN and BETWEEN
-	var generateDeepNestedWhereMix func(level int) where
-	generateDeepNestedWhereMix = func(level int) where {
-		if level == 1 {
-			return where{queryType: QueryBasic, column: "base", operator: "=", args: []any{1}}
-		}
-		return where{
-			queryType: QueryNested,
-			nested: []where{
-				generateDeepNestedWhereMix(level - 1), // now it works
-				{conj: "OR", queryType: QueryBetween, column: fmt.Sprintf("range_%d", level), operator: "BETWEEN", args: []any{level * 10, level*10 + 5}},
-			},
-		}
-	}
-
-	generateExpectedSQLMix := func(level int) string {
-		var sb strings.Builder
-		placeholder := 1
-
-		// Open parentheses for each nesting level
-		for i := 0; i < level-1; i++ {
-			sb.WriteString("(")
-		}
-
-		// Base condition
-		sb.WriteString(fmt.Sprintf(`"base" = $%d`, placeholder))
-		placeholder++
-
-		// Each deeper level adds OR + BETWEEN condition and closes one parenthesis
-		for i := 2; i <= level; i++ {
-			sb.WriteString(fmt.Sprintf(` OR "range_%d" BETWEEN $%d AND $%d)`, i, placeholder, placeholder+1))
-			placeholder += 2
-		}
-
-		return fmt.Sprintf(`SELECT * FROM "inventory" WHERE %s`, sb.String())
-	}
-
-	generateExpectedArgsMix := func(level int) []any {
-		args := []any{1} // base arg
-		for i := 2; i <= level; i++ {
-			start := i * 10
-			args = append(args, start, start+5)
-		}
-		return args
-	}
 
 	tests := []struct {
 		name          string
-		table         string
-		wheres        []where
+		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
 		expectedError string
 	}{
 		{
-			name:  "should handle nested where group (simple)",
-			table: "users",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "id", operator: "=", args: []any{1}},
-				{conj: "AND", queryType: QueryNested, nested: []where{
-					{queryType: QueryBasic, column: "name", operator: "=", args: []any{"John"}},
-					{conj: "OR", queryType: QueryBasic, column: "age", operator: ">", args: []any{25}},
-				}},
+			name: "should build grouped where clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					WhereGroup(func(q QueryBuilder) {
+						q.Where("age", ">", 18).
+							OrWhere("age", "<", 65)
+					})
 			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 AND ("name" = $2 OR "age" > $3)`,
-			expectedArgs: []any{1, "John", 25},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 AND ("age" > $2 OR "age" < $3)`,
+			expectedArgs: []any{"active", 18, 65},
 		},
 		{
-			name:  "should handle nested where group with IN operator",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{conj: "AND", queryType: QueryNested, nested: []where{
-					{queryType: QueryBasic, column: "id", operator: "IN", args: []any{[]any{1, 2, 3}}},
-					{conj: "OR", queryType: QueryBasic, column: "price", operator: "<", args: []any{100}},
-				}},
+			name: "should build nested grouped where clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					WhereGroup(func(q QueryBuilder) {
+						q.Where("age", ">", 18).
+							OrWhereGroup(func(q2 QueryBuilder) {
+								q2.Where("role", "=", "admin").
+									Where("department", "=", "IT")
+							})
+					})
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND ("id" IN ($2, $3, $4) OR "price" < $5)`,
-			expectedArgs: []any{"electronics", 1, 2, 3, 100},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 AND ("age" > $2 OR ("role" = $3 AND "department" = $4))`,
+			expectedArgs: []any{"active", 18, "admin", "IT"},
 		},
 		{
-			name:  "should handle deeply nested where group",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "id", operator: "=", args: []any{1}},
-				{conj: "AND", queryType: QueryNested, nested: []where{
-					{queryType: QueryBasic, column: "name", operator: "=", args: []any{"John"}},
-					{conj: "OR", queryType: QueryNested, nested: []where{
-						{queryType: QueryBasic, column: "age", operator: ">", args: []any{25}},
-						{conj: "AND", queryType: QueryBasic, column: "status", operator: "=", args: []any{"active"}},
-					}},
-				}},
+			name: "should handle empty group",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					WhereGroup(func(q QueryBuilder) {
+						// Empty group
+					})
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "id" = $1 AND ("name" = $2 OR ("age" > $3 AND "status" = $4))`,
-			expectedArgs: []any{1, "John", 25, "active"},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1`,
+			expectedArgs: []any{"active"},
 		},
 		{
-			name:  "should handle 5-level nested where group",
-			table: "orders",
-			wheres: []where{
-				{queryType: QueryNested, nested: []where{
-					{queryType: QueryBasic, column: "id", operator: "=", args: []any{1}},
-					{conj: "AND", queryType: QueryNested, nested: []where{
-						{queryType: QueryBasic, column: "status", operator: "=", args: []any{"open"}},
-						{conj: "OR", queryType: QueryNested, nested: []where{
-							{queryType: QueryBasic, column: "price", operator: ">", args: []any{50}},
-							{conj: "AND", queryType: QueryNested, nested: []where{
-								{queryType: QueryBasic, column: "qty", operator: ">", args: []any{10}},
-								{conj: "OR", queryType: QueryBasic, column: "qty", operator: "<", args: []any{2}},
-							}},
-						}},
-					}},
-				}},
+			name: "should handle group with only one condition",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					WhereGroup(func(q QueryBuilder) {
+						q.Where("age", ">", 18)
+					})
 			},
-			expectedSQL:  `SELECT * FROM "orders" WHERE ("id" = $1 AND ("status" = $2 OR ("price" > $3 AND ("qty" > $4 OR "qty" < $5))))`,
-			expectedArgs: []any{1, "open", 50, 10, 2},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 AND ("age" > $2)`,
+			expectedArgs: []any{"active", 18},
 		},
 		{
-			name:  "should handle 10-level nested where group (stress test)",
-			table: "items",
-			wheres: []where{
-				generateDeepNestedWhere(10, 1), // helper function below
+			name: "should handle leading WhereGroup as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereGroup(func(q QueryBuilder) {
+						q.Where("age", ">", 18).
+							OrWhere("age", "<", 65)
+					})
 			},
-			expectedSQL:  generateExpectedSQL(10),  // helper below
-			expectedArgs: generateExpectedArgs(10), // helper below
+			expectedSQL:  `SELECT * FROM "users" WHERE ("age" > $1 OR "age" < $2)`,
+			expectedArgs: []any{18, 65},
 		},
 		{
-			name:  "should handle 15-level nested where group with BETWEEN and IN (stress test)",
-			table: "inventory",
-			wheres: []where{
-				generateDeepNestedWhereMix(15),
+			name: "should handle 5-level nested where group",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereGroup(func(q1 QueryBuilder) {
+						q1.Where("level1", "=", 1).
+							WhereGroup(func(q2 QueryBuilder) {
+								q2.Where("level2", "=", 2).
+									WhereGroup(func(q3 QueryBuilder) {
+										q3.Where("level3", "=", 3).
+											WhereGroup(func(q4 QueryBuilder) {
+												q4.Where("level4", "=", 4).
+													WhereGroup(func(q5 QueryBuilder) {
+														q5.Where("level5", "=", 5)
+													})
+											})
+									})
+							})
+					})
 			},
-			expectedSQL:  generateExpectedSQLMix(15),
-			expectedArgs: generateExpectedArgsMix(15),
+			expectedSQL:  `SELECT * FROM "users" WHERE ("level1" = $1 AND ("level2" = $2 AND ("level3" = $3 AND ("level4" = $4 AND ("level5" = $5)))))`,
+			expectedArgs: []any{1, 2, 3, 4, 5},
+		},
+		{
+			name: "should handle 10-level nested where group",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereGroup(func(q1 QueryBuilder) {
+						q1.Where("level1", "=", 1).
+							WhereGroup(func(q2 QueryBuilder) {
+								q2.Where("level2", "=", 2).
+									WhereGroup(func(q3 QueryBuilder) {
+										q3.Where("level3", "=", 3).
+											WhereGroup(func(q4 QueryBuilder) {
+												q4.Where("level4", "=", 4).
+													WhereGroup(func(q5 QueryBuilder) {
+														q5.Where("level5", "=", 5).
+															WhereGroup(func(q6 QueryBuilder) {
+																q6.Where("level6", "=", 6).
+																	WhereGroup(func(q7 QueryBuilder) {
+																		q7.Where("level7", "=", 7).
+																			WhereGroup(func(q8 QueryBuilder) {
+																				q8.Where("level8", "=", 8).
+																					WhereGroup(func(q9 QueryBuilder) {
+																						q9.Where("level9", "=", 9).
+																							WhereGroup(func(q10 QueryBuilder) {
+																								q10.Where("level10", "=", 10)
+																							})
+																					})
+																			})
+																	})
+															})
+													})
+											})
+									})
+							})
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE ("level1" = $1 AND ("level2" = $2 AND ("level3" = $3 AND ("level4" = $4 AND ("level5" = $5 AND ("level6" = $6 AND ("level7" = $7 AND ("level8" = $8 AND ("level9" = $9 AND ("level10" = $10))))))))))`,
+			expectedArgs: []any{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		},
 	}
 
@@ -2705,28 +2681,214 @@ func TestPostgresDialect_CompileSelect_Select_Where_Group(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			// Arrange
 			b := &builder{
 				dialect: PostgresDialect{},
-				action:  "select",
-				table:   tt.table,
-				wheres:  tt.wheres,
 				limit:   -1,
 				offset:  -1,
 			}
+			tt.build(b)
 
+			// Act
 			sql, args, err := b.dialect.CompileSelect(b)
 
+			// Assert
 			if tt.expectedError != "" {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError)
-				assert.Empty(t, sql)
-				assert.Empty(t, args)
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
 				return
 			}
 
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedSQL, sql)
-			assert.Equal(t, tt.expectedArgs, args)
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhereGroup(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build OR grouped where clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					OrWhereGroup(func(q QueryBuilder) {
+						q.Where("age", ">", 18).
+							Where("age", "<", 65)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR ("age" > $2 AND "age" < $3)`,
+			expectedArgs: []any{"active", 18, 65},
+		},
+		{
+			name: "should build nested OR grouped where clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					OrWhereGroup(func(q QueryBuilder) {
+						q.Where("age", ">", 18).
+							OrWhereGroup(func(q2 QueryBuilder) {
+								q2.Where("role", "=", "admin").
+									Where("department", "=", "IT")
+							})
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR ("age" > $2 OR ("role" = $3 AND "department" = $4))`,
+			expectedArgs: []any{"active", 18, "admin", "IT"},
+		},
+		{
+			name: "should handle empty group",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					OrWhereGroup(func(q QueryBuilder) {
+						// Empty group
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1`,
+			expectedArgs: []any{"active"},
+		},
+		{
+			name: "should handle group with only one condition",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					OrWhereGroup(func(q QueryBuilder) {
+						q.Where("age", ">", 18)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR ("age" > $2)`,
+			expectedArgs: []any{"active", 18},
+		},
+		{
+			name: "should handle leading OrWhereGroup as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrWhereGroup(func(q QueryBuilder) {
+						q.Where("age", ">", 18).
+							Where("age", "<", 65)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE ("age" > $1 AND "age" < $2)`,
+			expectedArgs: []any{18, 65},
+		},
+		{
+			name: "should handle 5-level nested or where group",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("initial_status", "=", "pending").
+					OrWhereGroup(func(q1 QueryBuilder) {
+						q1.Where("level1", "=", 1).
+							OrWhereGroup(func(q2 QueryBuilder) {
+								q2.Where("level2", "=", 2).
+									OrWhereGroup(func(q3 QueryBuilder) {
+										q3.Where("level3", "=", 3).
+											OrWhereGroup(func(q4 QueryBuilder) {
+												q4.Where("level4", "=", 4).
+													OrWhereGroup(func(q5 QueryBuilder) {
+														q5.Where("level5", "=", 5)
+													})
+											})
+									})
+							})
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "initial_status" = $1 OR ("level1" = $2 OR ("level2" = $3 OR ("level3" = $4 OR ("level4" = $5 OR ("level5" = $6)))))`,
+			expectedArgs: []any{"pending", 1, 2, 3, 4, 5},
+		},
+		{
+			name: "should handle 10-level nested or where group",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("initial_status", "=", "pending").
+					OrWhereGroup(func(q1 QueryBuilder) {
+						q1.Where("level1", "=", 1).
+							OrWhereGroup(func(q2 QueryBuilder) {
+								q2.Where("level2", "=", 2).
+									OrWhereGroup(func(q3 QueryBuilder) {
+										q3.Where("level3", "=", 3).
+											OrWhereGroup(func(q4 QueryBuilder) {
+												q4.Where("level4", "=", 4).
+													OrWhereGroup(func(q5 QueryBuilder) {
+														q5.Where("level5", "=", 5).
+															OrWhereGroup(func(q6 QueryBuilder) {
+																q6.Where("level6", "=", 6).
+																	OrWhereGroup(func(q7 QueryBuilder) {
+																		q7.Where("level7", "=", 7).
+																			OrWhereGroup(func(q8 QueryBuilder) {
+																				q8.Where("level8", "=", 8).
+																					OrWhereGroup(func(q9 QueryBuilder) {
+																						q9.Where("level9", "=", 9).
+																							OrWhereGroup(func(q10 QueryBuilder) {
+																								q10.Where("level10", "=", 10)
+																							})
+																					})
+																			})
+																	})
+															})
+													})
+											})
+									})
+							})
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "initial_status" = $1 OR ("level1" = $2 OR ("level2" = $3 OR ("level3" = $4 OR ("level4" = $5 OR ("level5" = $6 OR ("level6" = $7 OR ("level7" = $8 OR ("level8" = $9 OR ("level9" = $10 OR ("level10" = $11))))))))))`,
+			expectedArgs: []any{"pending", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
 		})
 	}
 }
@@ -3911,33 +4073,69 @@ func BenchmarkPostgresDialect_WhereRaw(b *testing.B) {
 	}
 }
 
-func BenchmarkPostgresDialect_CompileSelect_Select_Where_Group(b *testing.B) {
-	d := PostgresDialect{}
-	builder := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "users",
-		wheres: []where{
-			{conj: "AND", queryType: QueryBasic, column: "id", operator: "=", args: []any{1}},
-			{conj: "AND", queryType: QueryNested, nested: []where{
-				{queryType: QueryBasic, column: "name", operator: "=", args: []any{"John"}},
-				{conj: "OR", queryType: QueryBasic, column: "age", operator: ">", args: []any{25}},
-				{conj: "AND", queryType: QueryNested, nested: []where{
-					{queryType: QueryBasic, column: "city", operator: "=", args: []any{"New York"}},
-					{conj: "OR", queryType: QueryBasic, column: "country", operator: "=", args: []any{"USA"}},
-					{conj: "AND", queryType: QueryNested, nested: []where{
-						{queryType: QueryBasic, column: "zip", operator: "=", args: []any{"10001"}},
-						{conj: "AND", queryType: QueryBasic, column: "active", operator: "=", args: []any{true}},
-					}},
-				}},
-			}},
+func BenchmarkPostgresDialect_WhereGroup(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "WhereGroup simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereGroup(func(q QueryBuilder) {
+						q.Where("age", ">", 18).
+							OrWhere("age", "<", 65)
+					})
+			},
 		},
-		limit:  -1,
-		offset: -1,
+		{
+			name: "OrWhereGroup simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					OrWhereGroup(func(q QueryBuilder) {
+						q.Where("age", ">", 18).
+							Where("age", "<", 65)
+					})
+			},
+		},
+		{
+			name: "WhereGroup deep nesting",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereGroup(func(q1 QueryBuilder) {
+						q1.Where("level1", "=", 1).
+							OrWhereGroup(func(q2 QueryBuilder) {
+								q2.Where("level2", "=", 2).
+									WhereGroup(func(q3 QueryBuilder) {
+										q3.Where("level3", "=", 3)
+									})
+							})
+					})
+			},
+		},
 	}
 
-	for b.Loop() {
-		_, _, _ = d.CompileSelect(builder)
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(bd)
+
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
 	}
 }
 
