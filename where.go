@@ -1,5 +1,9 @@
 package sequel
 
+import (
+	"strings"
+)
+
 func (b *builder) Where(column string, operator string, value any) QueryBuilder {
 	b.wheres = append(b.wheres, where{
 		queryType: QueryBasic,
@@ -161,31 +165,36 @@ func (b *builder) addWhereGroup(conj string, fn func(QueryBuilder)) {
 }
 
 func (b *builder) WhereSub(column, operator string, fn func(QueryBuilder)) QueryBuilder {
-	subBuilder := New(b.dialect).(*builder)
-	fn(subBuilder)
-
-	b.wheres = append(b.wheres, where{
-		queryType: QuerySub,
-		column:    column,
-		operator:  operator,
-		conj:      "AND",
-		sub:       subBuilder,
-	})
-
+	b.addWhereSub("AND", column, operator, fn)
 	return b
 }
 
 func (b *builder) OrWhereSub(column, operator string, fn func(QueryBuilder)) QueryBuilder {
+	b.addWhereSub("OR", column, operator, fn)
+	return b
+}
+
+func (b *builder) addWhereSub(conj, column, operator string, fn func(QueryBuilder)) {
+	if fn == nil {
+		b.wheres = append(b.wheres, where{
+			queryType: QuerySub,
+			conj:      conj,
+			column:    column,
+			operator:  strings.ToUpper(operator),
+			sub:       nil,
+		})
+		return
+	}
+
 	subBuilder := New(b.dialect).(*builder)
+	subBuilder.action = "select"
 	fn(subBuilder)
 
 	b.wheres = append(b.wheres, where{
 		queryType: QuerySub,
+		conj:      conj,
 		column:    column,
-		operator:  operator,
-		conj:      "OR",
+		operator:  strings.ToUpper(operator),
 		sub:       subBuilder,
 	})
-
-	return b
 }

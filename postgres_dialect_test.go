@@ -2893,315 +2893,123 @@ func TestPostgresDialect_OrWhereGroup(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_Where_Sub(t *testing.T) {
+func TestPostgresDialect_WhereSub(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name          string
-		table         string
-		wheres        []where
+		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
 		expectedError string
 	}{
 		{
-			name:  "should handle where conditions with subquery (IN)",
-			table: "users",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "active_users",
-					columns: []column{{queryType: QueryBasic, name: "user_id"}},
-					limit:   -1,
-					offset:  -1,
-				}},
+			name: "should build where clause with subquery",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereSub("id", "IN", func(q QueryBuilder) {
+						q.Select("user_id").
+							From("orders").
+							Where("amount", ">", 100)
+					})
 			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "id" IN (SELECT "user_id" FROM "active_users")`,
+			expectedSQL:  `SELECT * FROM "users" WHERE "id" IN (SELECT "user_id" FROM "orders" WHERE "amount" > $1)`,
+			expectedArgs: []any{100},
+		},
+		{
+			name: "should build where clause with subquery and alias",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users u").
+					WhereSub("u.id", "IN", func(q QueryBuilder) {
+						q.Select("user_id").
+							From("orders").
+							Where("amount", ">", 100)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" AS "u" WHERE "u"."id" IN (SELECT "user_id" FROM "orders" WHERE "amount" > $1)`,
+			expectedArgs: []any{100},
+		},
+		{
+			name: "should build where clause with subquery and multiple conditions",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "=", 1).
+					WhereSub("id", "NOT IN", func(q QueryBuilder) {
+						q.Select("product_id").
+							From("order_items").
+							Where("quantity", ">", 5)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" = $1 AND "id" NOT IN (SELECT "product_id" FROM "order_items" WHERE "quantity" > $2)`,
+			expectedArgs: []any{1, 5},
+		},
+		{
+			name: "should build where clause with subquery and EXISTS operator",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereSub("", "EXISTS", func(q QueryBuilder) {
+						q.Select("user_id").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE EXISTS (SELECT "user_id" FROM "orders" WHERE orders.user_id = users.id)`,
 			expectedArgs: []any{},
 		},
 		{
-			name:  "should handle where conditions with subquery (NOT IN)",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "id", operator: "NOT IN", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "discontinued_products",
-					columns: []column{{queryType: QueryBasic, name: "product_id"}},
-					limit:   -1,
-					offset:  -1,
-				}},
+			name: "should build deeply nested subquery",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereSub("id", "IN", func(q1 QueryBuilder) {
+						q1.Select("user_id").
+							From("orders").
+							WhereSub("order_id", "IN", func(q2 QueryBuilder) {
+								q2.Select("id").
+									From("order_items").
+									Where("product_id", "=", 1).
+									WhereSub("item_status", "IN", func(q3 QueryBuilder) {
+										q3.Select("status_id").
+											From("item_statuses").
+											Where("status_name", "=", "completed")
+									})
+							})
+					})
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "id" NOT IN (SELECT "product_id" FROM "discontinued_products")`,
-			expectedArgs: []any{},
+			expectedSQL:  `SELECT * FROM "users" WHERE "id" IN (SELECT "user_id" FROM "orders" WHERE "order_id" IN (SELECT "id" FROM "order_items" WHERE "product_id" = $1 AND "item_status" IN (SELECT "status_id" FROM "item_statuses" WHERE "status_name" = $2)))`,
+			expectedArgs: []any{1, "completed"},
 		},
 		{
-			name:  "should handle where conditions with subquery (EXISTS)",
-			table: "orders",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "", operator: "EXISTS", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "order_items",
-					columns: []column{{queryType: QueryRaw, expr: "1"}},
-					limit:   -1,
-					offset:  -1,
-				}},
+			name: "should return error when subquery builder is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereSub("id", "IN", nil)
 			},
-			expectedSQL:  `SELECT * FROM "orders" WHERE EXISTS (SELECT 1 FROM "order_items")`,
-			expectedArgs: []any{},
+			expectedError: "WHERE SUB clause cannot be empty",
 		},
 		{
-			name:  "should handle where conditions with subquery (NOT EXISTS)",
-			table: "customers",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "", operator: "NOT EXISTS", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "inactive_accounts",
-					columns: []column{{queryType: QueryRaw, expr: "1"}},
-					limit:   -1,
-					offset:  -1,
-				}},
+			name: "should return error when subquery is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					WhereSub("id", "IN", func(q QueryBuilder) {
+						// Empty subquery
+					})
 			},
-			expectedSQL:  `SELECT * FROM "customers" WHERE NOT EXISTS (SELECT 1 FROM "inactive_accounts")`,
-			expectedArgs: []any{},
-		},
-		{
-			name:  "should handle subquery with arguments",
-			table: "users",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "posts",
-					columns: []column{{queryType: QueryBasic, name: "author_id"}},
-					wheres: []where{
-						{queryType: QueryBasic, column: "status", operator: "=", args: []any{"published"}},
-						{conj: "AND", queryType: QueryBasic, column: "views", operator: ">", args: []any{100}},
-					},
-					limit:  -1,
-					offset: -1,
-				}},
-			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "id" IN (SELECT "author_id" FROM "posts" WHERE "status" = $1 AND "views" > $2)`,
-			expectedArgs: []any{"published", 100},
-		},
-		{
-			name:  "should handle subquery with arguments and limit - offset",
-			table: "users",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "posts",
-					columns: []column{{queryType: QueryBasic, name: "author_id"}},
-					wheres: []where{
-						{queryType: QueryBasic, column: "status", operator: "=", args: []any{"published"}},
-					},
-					limit:  5,
-					offset: 10,
-				}},
-			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "id" IN (SELECT "author_id" FROM "posts" WHERE "status" = $1 LIMIT 5 OFFSET 10)`,
-			expectedArgs: []any{"published"},
-		},
-		{
-			name:  "should handle subquery with multiple arguments and renumbering",
-			table: "main_table",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "main_id", operator: "=", args: []any{99}},
-				{conj: "AND", queryType: QuerySub, column: "sub_id", operator: "IN", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "sub_table",
-					columns: []column{{queryType: QueryBasic, name: "id"}},
-					wheres: []where{
-						{queryType: QueryBasic, column: "value1", operator: ">", args: []any{100}},
-						{conj: "AND", queryType: QueryBasic, column: "value2", operator: "<", args: []any{200}},
-					},
-					limit:  -1,
-					offset: -1,
-				}},
-				{conj: "AND", queryType: QueryBasic, column: "another_col", operator: "=", args: []any{"test"}},
-			},
-			expectedSQL:  `SELECT * FROM "main_table" WHERE "main_id" = $1 AND "sub_id" IN (SELECT "id" FROM "sub_table" WHERE "value1" > $2 AND "value2" < $3) AND "another_col" = $4`,
-			expectedArgs: []any{99, 100, 200, "test"},
-		},
-		{
-			name:  "should handle subquery with no arguments",
-			table: "users",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "active_users",
-					columns: []column{{queryType: QueryBasic, name: "user_id"}},
-					limit:   -1,
-					offset:  -1,
-				}},
-			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "id" IN (SELECT "user_id" FROM "active_users")`,
-			expectedArgs: []any{},
-		},
-		{
-			name:  "should handle subquery with custom operator and no column",
-			table: "logs",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "", operator: "SOME", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "log_entries",
-					columns: []column{{queryType: QueryBasic, name: "id"}},
-					limit:   -1,
-					offset:  -1,
-				}},
-			},
-			expectedSQL:  `SELECT * FROM "logs" WHERE SOME (SELECT "id" FROM "log_entries")`,
-			expectedArgs: []any{},
-		},
-		{
-			name:  "should handle subquery with raw column expression and args",
-			table: "metrics",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "metric_id", operator: "IN", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "measurements",
-					columns: []column{{queryType: QueryRaw, expr: "MAX(value)", args: []any{}}},
-					wheres: []where{
-						{queryType: QueryRaw, expr: "created_at > ?", args: []any{"2025-01-01"}},
-					},
-					limit:  -1,
-					offset: -1,
-				}},
-			},
-			expectedSQL:  `SELECT * FROM "metrics" WHERE "metric_id" IN (SELECT MAX(value) FROM "measurements" WHERE created_at > $1)`,
-			expectedArgs: []any{"2025-01-01"},
-		},
-		{
-			name:  "should handle nested subquery inside subquery",
-			table: "users",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "teams",
-					columns: []column{{queryType: QueryBasic, name: "user_id"}},
-					wheres: []where{
-						{queryType: QuerySub, column: "team_id", operator: "IN", sub: &builder{
-							dialect: PostgresDialect{},
-							action:  "select",
-							table:   "departments",
-							columns: []column{{queryType: QueryBasic, name: "team_id"}},
-							wheres: []where{
-								{queryType: QueryBasic, column: "active", operator: "=", args: []any{true}},
-							},
-							limit:  -1,
-							offset: -1,
-						}},
-					},
-					limit:  -1,
-					offset: -1,
-				}},
-			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "id" IN (SELECT "user_id" FROM "teams" WHERE "team_id" IN (SELECT "team_id" FROM "departments" WHERE "active" = $1))`,
-			expectedArgs: []any{true},
-		},
-		{
-			name:  "should handle five-level deep nested subqueries with multiple args per level",
-			table: "root_table",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "root_id", operator: "IN", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "level1",
-					columns: []column{{queryType: QueryBasic, name: "l1_id"}},
-					wheres: []where{
-						{queryType: QueryBasic, column: "l1_col1", operator: "=", args: []any{"l1_val1"}},
-						{conj: "AND", queryType: QueryBasic, column: "l1_col2", operator: ">", args: []any{10}},
-						{conj: "AND", queryType: QueryBasic, column: "l1_col3", operator: "<", args: []any{20}},
-						{queryType: QuerySub, column: "l1_id", operator: "IN", sub: &builder{
-							dialect: PostgresDialect{},
-							action:  "select",
-							table:   "level2",
-							columns: []column{{queryType: QueryBasic, name: "l2_id"}},
-							wheres: []where{
-								{queryType: QueryBasic, column: "l2_col1", operator: "=", args: []any{"l2_val1"}},
-								{conj: "AND", queryType: QueryBasic, column: "l2_col2", operator: ">", args: []any{30}},
-								{conj: "AND", queryType: QueryBasic, column: "l2_col3", operator: "<", args: []any{40}},
-								{queryType: QuerySub, column: "l2_id", operator: "IN", sub: &builder{
-									dialect: PostgresDialect{},
-									action:  "select",
-									table:   "level3",
-									columns: []column{{queryType: QueryBasic, name: "l3_id"}},
-									wheres: []where{
-										{queryType: QueryBasic, column: "l3_col1", operator: "=", args: []any{"l3_val1"}},
-										{conj: "AND", queryType: QueryBasic, column: "l3_col2", operator: ">", args: []any{50}},
-										{conj: "AND", queryType: QueryBasic, column: "l3_col3", operator: "<", args: []any{60}},
-										{queryType: QuerySub, column: "l3_id", operator: "IN", sub: &builder{
-											dialect: PostgresDialect{},
-											action:  "select",
-											table:   "level4",
-											columns: []column{{queryType: QueryBasic, name: "l4_id"}},
-											wheres: []where{
-												{queryType: QueryBasic, column: "l4_col1", operator: "=", args: []any{"l4_val1"}},
-												{conj: "AND", queryType: QueryBasic, column: "l4_col2", operator: ">", args: []any{70}},
-												{conj: "AND", queryType: QueryBasic, column: "l4_col3", operator: "<", args: []any{80}},
-												{queryType: QuerySub, column: "l4_id", operator: "IN", sub: &builder{
-													dialect: PostgresDialect{},
-													action:  "select",
-													table:   "level5",
-													columns: []column{{queryType: QueryBasic, name: "l5_id"}},
-													wheres: []where{
-														{queryType: QueryBasic, column: "l5_col1", operator: "=", args: []any{"l5_val1"}},
-														{conj: "AND", queryType: QueryBasic, column: "l5_col2", operator: ">", args: []any{90}},
-														{conj: "AND", queryType: QueryBasic, column: "l5_col3", operator: "<", args: []any{100}},
-													},
-													limit:  -1,
-													offset: -1,
-												}},
-											},
-											limit:  -1,
-											offset: -1,
-										}},
-									},
-									limit:  -1,
-									offset: -1,
-								}},
-							},
-							limit:  -1,
-							offset: -1,
-						}},
-					},
-					limit:  -1,
-					offset: -1,
-				}},
-			},
-			expectedSQL: `SELECT * FROM "root_table" WHERE "root_id" IN (SELECT "l1_id" FROM "level1" WHERE "l1_col1" = $1 AND "l1_col2" > $2 AND "l1_col3" < $3 AND "l1_id" IN (SELECT "l2_id" FROM "level2" WHERE "l2_col1" = $4 AND "l2_col2" > $5 AND "l2_col3" < $6 AND "l2_id" IN (SELECT "l3_id" FROM "level3" WHERE "l3_col1" = $7 AND "l3_col2" > $8 AND "l3_col3" < $9 AND "l3_id" IN (SELECT "l4_id" FROM "level4" WHERE "l4_col1" = $10 AND "l4_col2" > $11 AND "l4_col3" < $12 AND "l4_id" IN (SELECT "l5_id" FROM "level5" WHERE "l5_col1" = $13 AND "l5_col2" > $14 AND "l5_col3" < $15)))))`,
-			expectedArgs: []any{
-				"l1_val1", 10, 20,
-				"l2_val1", 30, 40,
-				"l3_val1", 50, 60,
-				"l4_val1", 70, 80,
-				"l5_val1", 90, 100,
-			},
-		},
-		{
-			name:  "should return error when compileWhereClause fails due to invalid subquery",
-			table: "orders",
-			wheres: []where{
-				{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
-					// missing dialect, will cause ToSQL() to fail
-					action:  "select",
-					table:   "broken_subquery",
-					columns: []column{{queryType: QueryBasic, name: "col"}},
-					limit:   -1,
-					offset:  -1,
-				}},
-			},
-			expectedError: "no dialect specified", // match the error returned by ToSQL()
+			expectedError: "WHERE SUB clause cannot be empty",
 		},
 	}
 
@@ -3212,12 +3020,181 @@ func TestPostgresDialect_CompileSelect_Where_Sub(t *testing.T) {
 			// Arrange
 			b := &builder{
 				dialect: PostgresDialect{},
-				action:  "select",
-				table:   tt.table,
-				wheres:  tt.wheres,
 				limit:   -1,
 				offset:  -1,
 			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhereSub(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build OR where clause with subquery",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereSub("id", "IN", func(q QueryBuilder) {
+						q.Select("user_id").
+							From("orders").
+							Where("amount", ">", 100)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR "id" IN (SELECT "user_id" FROM "orders" WHERE "amount" > $2)`,
+			expectedArgs: []any{"inactive", 100},
+		},
+		{
+			name: "should build OR where clause with subquery and alias",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users u").
+					Where("status", "=", "inactive").
+					OrWhereSub("u.id", "IN", func(q QueryBuilder) {
+						q.Select("user_id").
+							From("orders").
+							Where("amount", ">", 100)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" AS "u" WHERE "status" = $1 OR "u"."id" IN (SELECT "user_id" FROM "orders" WHERE "amount" > $2)`,
+			expectedArgs: []any{"inactive", 100},
+		},
+		{
+			name: "should build OR where clause with subquery and multiple conditions",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "=", 1).
+					OrWhereSub("id", "NOT IN", func(q QueryBuilder) {
+						q.Select("product_id").
+							From("order_items").
+							Where("quantity", ">", 5)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" = $1 OR "id" NOT IN (SELECT "product_id" FROM "order_items" WHERE "quantity" > $2)`,
+			expectedArgs: []any{1, 5},
+		},
+		{
+			name: "should build OR where clause with subquery and EXISTS operator",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereSub("", "EXISTS", func(q QueryBuilder) {
+						q.Select("user_id").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR EXISTS (SELECT "user_id" FROM "orders" WHERE orders.user_id = users.id)`,
+			expectedArgs: []any{"inactive"},
+		},
+		{
+			name: "should treat leading OrWhereSub as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrWhereSub("id", "IN", func(q QueryBuilder) {
+						q.Select("user_id").
+							From("orders").
+							Where("amount", ">", 100)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "id" IN (SELECT "user_id" FROM "orders" WHERE "amount" > $1)`,
+			expectedArgs: []any{100},
+		},
+		{
+			name: "should build deeply nested OR subquery",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereSub("id", "IN", func(q1 QueryBuilder) {
+						q1.Select("user_id").
+							From("orders").
+							OrWhereSub("order_id", "IN", func(q2 QueryBuilder) {
+								q2.Select("id").
+									From("order_items").
+									Where("product_id", "=", 1).
+									OrWhereSub("item_id", "IN", func(q3 QueryBuilder) {
+										q3.Select("id").
+											From("inventory").
+											Where("location", "=", "warehouse")
+									})
+							})
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR "id" IN (SELECT "user_id" FROM "orders" WHERE "order_id" IN (SELECT "id" FROM "order_items" WHERE "product_id" = $2 OR "item_id" IN (SELECT "id" FROM "inventory" WHERE "location" = $3)))`,
+			expectedArgs: []any{"inactive", 1, "warehouse"},
+		},
+		{
+			name: "should return error when subquery builder is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereSub("id", "IN", nil)
+			},
+			expectedError: "WHERE SUB clause cannot be empty",
+		},
+		{
+			name: "should return error when subquery is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereSub("id", "IN", func(q QueryBuilder) {
+						// Empty subquery
+					})
+			},
+			expectedError: "WHERE SUB clause cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
 
 			// Act
 			sql, args, err := b.dialect.CompileSelect(b)
@@ -4116,6 +4093,74 @@ func BenchmarkPostgresDialect_WhereGroup(b *testing.B) {
 									WhereGroup(func(q3 QueryBuilder) {
 										q3.Where("level3", "=", 3)
 									})
+							})
+					})
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(bd)
+
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_WhereSub(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "WhereSub simple IN",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereSub("id", "IN", func(q QueryBuilder) {
+						q.Select("user_id").
+							From("orders").
+							Where("amount", ">", 100)
+					})
+			},
+		},
+		{
+			name: "OrWhereSub simple EXISTS",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereSub("", "EXISTS", func(q QueryBuilder) {
+						q.Select("user_id").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+		},
+		{
+			name: "WhereSub nested",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereSub("id", "IN", func(q1 QueryBuilder) {
+						q1.Select("user_id").
+							From("orders").
+							WhereSub("order_id", "IN", func(q2 QueryBuilder) {
+								q2.Select("id").
+									From("order_items").
+									Where("product_id", "=", 1)
 							})
 					})
 			},

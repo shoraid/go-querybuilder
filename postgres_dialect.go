@@ -254,9 +254,23 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(")")
 
 		case QuerySub:
+			if w.sub == nil {
+				return "", fmt.Errorf("WHERE SUB clause cannot be empty")
+			}
+
+			if subBuilder, ok := w.sub.(*builder); ok {
+				if subBuilder.action == "" || subBuilder.table == "" {
+					return "", fmt.Errorf("WHERE SUB clause cannot be empty")
+				}
+			}
+
 			subSQL, subArgs, err := w.sub.ToSQL()
 			if err != nil {
 				return "", err
+			}
+
+			if strings.TrimSpace(subSQL) == "" {
+				return "", fmt.Errorf("WHERE SUB clause cannot be empty")
 			}
 
 			// Renumber placeholders inside subquery SQL without collisions
