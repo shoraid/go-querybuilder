@@ -3215,6 +3215,516 @@ func TestPostgresDialect_OrWhereSub(t *testing.T) {
 	}
 }
 
+func TestPostgresDialect_WhereExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build EXISTS clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build EXISTS clause with other conditions",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					WhereExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id").
+							Where("amount", ">", 100)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 AND EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id AND "amount" > $2)`,
+			expectedArgs: []any{"active", 100},
+		},
+		{
+			name: "should build deeply nested EXISTS subquery",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereExists(func(q1 QueryBuilder) {
+						q1.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id").
+							WhereExists(func(q2 QueryBuilder) {
+								q2.SelectRaw("1").
+									From("order_items").
+									WhereRaw("order_items.order_id = orders.id").
+									Where("product_id", "=", 1)
+							})
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id AND EXISTS (SELECT 1 FROM "order_items" WHERE order_items.order_id = orders.id AND "product_id" = $1))`,
+			expectedArgs: []any{1},
+		},
+		{
+			name: "should return error when subquery builder is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereExists(nil)
+			},
+			expectedError: "WHERE SUB clause cannot be empty",
+		},
+		{
+			name: "should return error when subquery is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereExists(func(q QueryBuilder) {
+						// Empty subquery
+					})
+			},
+			expectedError: "WHERE SUB clause cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhereExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build OR EXISTS clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)`,
+			expectedArgs: []any{"inactive"},
+		},
+		{
+			name: "should build OR EXISTS clause with other conditions",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id").
+							Where("amount", ">", 100)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id AND "amount" > $2)`,
+			expectedArgs: []any{"inactive", 100},
+		},
+		{
+			name: "should treat leading OrWhereExists as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrWhereExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build deeply nested OR EXISTS subquery",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereExists(func(q1 QueryBuilder) {
+						q1.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id").
+							OrWhereExists(func(q2 QueryBuilder) {
+								q2.SelectRaw("1").
+									From("order_items").
+									WhereRaw("order_items.order_id = orders.id").
+									Where("product_id", "=", 1)
+							})
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id OR EXISTS (SELECT 1 FROM "order_items" WHERE order_items.order_id = orders.id AND "product_id" = $2))`,
+			expectedArgs: []any{"inactive", 1},
+		},
+		{
+			name: "should return error when subquery builder is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereExists(nil)
+			},
+			expectedError: "WHERE SUB clause cannot be empty",
+		},
+		{
+			name: "should return error when subquery is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereExists(func(q QueryBuilder) {
+						// Empty subquery
+					})
+			},
+			expectedError: "WHERE SUB clause cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_WhereNotExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build NOT EXISTS clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereNotExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE NOT EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build NOT EXISTS clause with other conditions",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "active").
+					WhereNotExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id").
+							Where("amount", ">", 100)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 AND NOT EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id AND "amount" > $2)`,
+			expectedArgs: []any{"active", 100},
+		},
+		{
+			name: "should build deeply nested NOT EXISTS subquery",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereNotExists(func(q1 QueryBuilder) {
+						q1.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id").
+							WhereNotExists(func(q2 QueryBuilder) {
+								q2.SelectRaw("1").
+									From("order_items").
+									WhereRaw("order_items.order_id = orders.id").
+									Where("product_id", "=", 1)
+							})
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE NOT EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id AND NOT EXISTS (SELECT 1 FROM "order_items" WHERE order_items.order_id = orders.id AND "product_id" = $1))`,
+			expectedArgs: []any{1},
+		},
+		{
+			name: "should return error when subquery builder is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereNotExists(nil)
+			},
+			expectedError: "WHERE SUB clause cannot be empty",
+		},
+		{
+			name: "should return error when subquery is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereNotExists(func(q QueryBuilder) {
+						// Empty subquery
+					})
+			},
+			expectedError: "WHERE SUB clause cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhereNotExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build OR NOT EXISTS clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereNotExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR NOT EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)`,
+			expectedArgs: []any{"inactive"},
+		},
+		{
+			name: "should build OR NOT EXISTS clause with other conditions",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereNotExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id").
+							Where("amount", ">", 100)
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR NOT EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id AND "amount" > $2)`,
+			expectedArgs: []any{"inactive", 100},
+		},
+		{
+			name: "should treat leading OrWhereNotExists as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrWhereNotExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE NOT EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build deeply nested OR NOT EXISTS subquery",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereNotExists(func(q1 QueryBuilder) {
+						q1.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id").
+							OrWhereNotExists(func(q2 QueryBuilder) {
+								q2.SelectRaw("1").
+									From("order_items").
+									WhereRaw("order_items.order_id = orders.id").
+									Where("product_id", "=", 1)
+							})
+					})
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR NOT EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id OR NOT EXISTS (SELECT 1 FROM "order_items" WHERE order_items.order_id = orders.id AND "product_id" = $2))`,
+			expectedArgs: []any{"inactive", 1},
+		},
+		{
+			name: "should return error when subquery builder is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereNotExists(nil)
+			},
+			expectedError: "WHERE SUB clause cannot be empty",
+		},
+		{
+			name: "should return error when subquery is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereNotExists(func(q QueryBuilder) {
+						// Empty subquery
+					})
+			},
+			expectedError: "WHERE SUB clause cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
 func TestPostgresDialect_CompileSelect_Select_Where_Combined(t *testing.T) {
 	t.Parallel()
 
@@ -4161,6 +4671,144 @@ func BenchmarkPostgresDialect_WhereSub(b *testing.B) {
 								q2.Select("id").
 									From("order_items").
 									Where("product_id", "=", 1)
+							})
+					})
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(bd)
+
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_WhereExists(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "WhereExists simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+		},
+		{
+			name: "OrWhereExists simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+		},
+		{
+			name: "WhereExists nested",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereExists(func(q1 QueryBuilder) {
+						q1.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id").
+							WhereExists(func(q2 QueryBuilder) {
+								q2.SelectRaw("1").
+									From("order_items").
+									WhereRaw("order_items.order_id = orders.id")
+							})
+					})
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(bd)
+
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_WhereNotExists(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "WhereNotExists simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereNotExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+		},
+		{
+			name: "OrWhereNotExists simple",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					Where("status", "=", "inactive").
+					OrWhereNotExists(func(q QueryBuilder) {
+						q.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id")
+					})
+			},
+		},
+		{
+			name: "WhereNotExists nested",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					WhereNotExists(func(q1 QueryBuilder) {
+						q1.SelectRaw("1").
+							From("orders").
+							WhereRaw("orders.user_id = users.id").
+							WhereNotExists(func(q2 QueryBuilder) {
+								q2.SelectRaw("1").
+									From("order_items").
+									WhereRaw("order_items.order_id = orders.id")
 							})
 					})
 			},

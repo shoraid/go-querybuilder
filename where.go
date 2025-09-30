@@ -174,6 +174,26 @@ func (b *builder) OrWhereSub(column, operator string, fn func(QueryBuilder)) Que
 	return b
 }
 
+func (b *builder) WhereExists(sub func(QueryBuilder)) QueryBuilder {
+	b.addWhereSub("AND", "", "EXISTS", sub)
+	return b
+}
+
+func (b *builder) OrWhereExists(sub func(QueryBuilder)) QueryBuilder {
+	b.addWhereSub("OR", "", "EXISTS", sub)
+	return b
+}
+
+func (b *builder) WhereNotExists(sub func(QueryBuilder)) QueryBuilder {
+	b.addWhereSub("AND", "", "NOT EXISTS", sub)
+	return b
+}
+
+func (b *builder) OrWhereNotExists(sub func(QueryBuilder)) QueryBuilder {
+	b.addWhereSub("OR", "", "NOT EXISTS", sub)
+	return b
+}
+
 func (b *builder) addWhereSub(conj, column, operator string, fn func(QueryBuilder)) {
 	if fn == nil {
 		b.wheres = append(b.wheres, where{

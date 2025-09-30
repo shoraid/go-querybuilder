@@ -41,6 +41,11 @@ type QueryBuilder interface {
 	WhereSub(column, operator string, sub func(QueryBuilder)) QueryBuilder
 	OrWhereSub(column, operator string, sub func(QueryBuilder)) QueryBuilder
 
+	WhereExists(sub func(QueryBuilder)) QueryBuilder
+	OrWhereExists(sub func(QueryBuilder)) QueryBuilder
+	WhereNotExists(sub func(QueryBuilder)) QueryBuilder
+	OrWhereNotExists(sub func(QueryBuilder)) QueryBuilder
+
 	// Order By
 	OrderBy(column, direction string) QueryBuilder
 	OrderByRaw(expr string, args ...any) QueryBuilder

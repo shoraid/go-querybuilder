@@ -1467,6 +1467,418 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 	}
 }
 
+func TestBuilder_WhereExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		subFn          func(QueryBuilder)
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single WHERE EXISTS condition",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").
+					From("users").
+					Where("status", "=", "active")
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "EXISTS",
+					conj:      "AND",
+					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "active"),
+				},
+			},
+		},
+		{
+			name: "should add a second WHERE EXISTS condition with AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").
+					From("orders").
+					Where("user_id", "=", 1)
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "EXISTS",
+					conj:      "AND",
+					sub:       New(PostgresDialect{}).Select("id").From("orders").Where("user_id", "=", 1),
+				},
+			},
+		},
+		{
+			name:          "should handle EXISTS with empty subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.From("users") // No select, but From is enough for a valid subquery
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "EXISTS",
+					conj:      "AND",
+					sub:       New(PostgresDialect{}).From("users"),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				wheres:  tt.initialWheres,
+			}
+
+			// Act
+			result := b.WhereExists(tt.subFn)
+
+			// Assert
+			// We need to compare the sub-builders separately as direct comparison of interfaces fails
+			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
+			if len(tt.expectedWheres) > 0 {
+				for i, expectedWhere := range tt.expectedWheres {
+					actualWhere := b.wheres[i]
+					assert.Equal(t, expectedWhere.queryType, actualWhere.queryType, "expected query type to match")
+					assert.Equal(t, expectedWhere.column, actualWhere.column, "expected column to match")
+					assert.Equal(t, expectedWhere.operator, actualWhere.operator, "expected operator to match")
+					assert.Equal(t, expectedWhere.conj, actualWhere.conj, "expected conj to match")
+					assert.Equal(t, expectedWhere.args, actualWhere.args, "expected args to match")
+
+					if expectedWhere.queryType == QuerySub {
+						expectedSubBuilder := expectedWhere.sub.(*builder)
+						actualSubBuilder := actualWhere.sub.(*builder)
+						assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "expected table to match")
+						assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "expected columns to match")
+						assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "expected wheres to match")
+					}
+				}
+			}
+
+			assert.Equal(t, b, result, "expected WhereExists() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		subFn          func(QueryBuilder)
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single OR WHERE EXISTS condition",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").
+					From("users").
+					Where("status", "=", "inactive")
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "EXISTS",
+					conj:      "OR",
+					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "inactive"),
+				},
+			},
+		},
+		{
+			name: "should add a second OR WHERE EXISTS condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").
+					From("orders").
+					Where("user_id", "=", 2)
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "EXISTS",
+					conj:      "OR",
+					sub:       New(PostgresDialect{}).Select("id").From("orders").Where("user_id", "=", 2),
+				},
+			},
+		},
+		{
+			name:          "should handle OR EXISTS with empty subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.From("products") // No select, but From is enough for a valid subquery
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "EXISTS",
+					conj:      "OR",
+					sub:       New(PostgresDialect{}).From("products"),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres, dialect: PostgresDialect{}}
+
+			// Act
+			result := b.OrWhereExists(tt.subFn)
+
+			// Assert
+			// We need to compare the sub-builders separately as direct comparison of interfaces fails
+			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
+
+			if len(tt.expectedWheres) > 0 {
+				for i, expectedWhere := range tt.expectedWheres {
+					actualWhere := b.wheres[i]
+					assert.Equal(t, expectedWhere.queryType, actualWhere.queryType, "expected QueryType to match")
+					assert.Equal(t, expectedWhere.column, actualWhere.column, "expected column to match")
+					assert.Equal(t, expectedWhere.operator, actualWhere.operator, "expected operator to match")
+					assert.Equal(t, expectedWhere.conj, actualWhere.conj, "expected conj to match")
+					assert.Equal(t, expectedWhere.args, actualWhere.args, "expected args to match")
+
+					if expectedWhere.queryType == QuerySub {
+						expectedSubBuilder := expectedWhere.sub.(*builder)
+						actualSubBuilder := actualWhere.sub.(*builder)
+						assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "expected table to match")
+						assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "expected columns to match")
+						assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "expected wheres to match")
+					}
+				}
+			}
+
+			assert.Equal(t, b, result, "expected OrWhereExists() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_WhereNotExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		subFn          func(QueryBuilder)
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single WHERE NOT EXISTS condition",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("users").Where("status", "=", "active")
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "NOT EXISTS",
+					conj:      "AND",
+					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "active"),
+				},
+			},
+		},
+		{
+			name: "should add a second WHERE NOT EXISTS condition with AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("orders").Where("user_id", "=", 1)
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "NOT EXISTS",
+					conj:      "AND",
+					sub:       New(PostgresDialect{}).Select("id").From("orders").Where("user_id", "=", 1),
+				},
+			},
+		},
+		{
+			name:          "should handle NOT EXISTS with empty subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.From("users") // No select, but From is enough for a valid subquery
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "NOT EXISTS",
+					conj:      "AND",
+					sub:       New(PostgresDialect{}).From("users"),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				wheres:  tt.initialWheres,
+			}
+
+			// Act
+			result := b.WhereNotExists(tt.subFn)
+
+			// Assert
+			// We need to compare the sub-builders separately as direct comparison of interfaces fails
+			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
+			if len(tt.expectedWheres) > 0 {
+				for i, expectedWhere := range tt.expectedWheres {
+					actualWhere := b.wheres[i]
+					assert.Equal(t, expectedWhere.queryType, actualWhere.queryType, "expected query type to match")
+					assert.Equal(t, expectedWhere.column, actualWhere.column, "expected column to match")
+					assert.Equal(t, expectedWhere.operator, actualWhere.operator, "expected operator to match")
+					assert.Equal(t, expectedWhere.conj, actualWhere.conj, "expected conj to match")
+					assert.Equal(t, expectedWhere.args, actualWhere.args, "expected args to match")
+
+					if expectedWhere.queryType == QuerySub {
+						expectedSubBuilder := expectedWhere.sub.(*builder)
+						actualSubBuilder := actualWhere.sub.(*builder)
+						assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "expected table to match")
+						assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "expected columns to match")
+						assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "expected wheres to match")
+					}
+				}
+			}
+
+			assert.Equal(t, b, result, "expected WhereNotExists() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereNotExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		subFn          func(QueryBuilder)
+		expectedWheres []where
+	}{
+		{
+			name:          "should add a single OR WHERE NOT EXISTS condition",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("users").Where("status", "=", "inactive")
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "NOT EXISTS",
+					conj:      "OR",
+					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "inactive"),
+				},
+			},
+		},
+		{
+			name: "should add a second OR WHERE NOT EXISTS condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+			},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("orders").Where("user_id", "=", 2)
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "NOT EXISTS",
+					conj:      "OR",
+					sub:       New(PostgresDialect{}).Select("id").From("orders").Where("user_id", "=", 2),
+				},
+			},
+		},
+		{
+			name:          "should handle OR NOT EXISTS with empty subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.From("products") // No select, but From is enough for a valid subquery
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					column:    "",
+					operator:  "NOT EXISTS",
+					conj:      "OR",
+					sub:       New(PostgresDialect{}).From("products"),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres, dialect: PostgresDialect{}}
+
+			// Act
+			result := b.OrWhereNotExists(tt.subFn)
+
+			// Assert
+			// We need to compare the sub-builders separately as direct comparison of interfaces fails
+			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
+
+			if len(tt.expectedWheres) > 0 {
+				for i, expectedWhere := range tt.expectedWheres {
+					actualWhere := b.wheres[i]
+					assert.Equal(t, expectedWhere.queryType, actualWhere.queryType, "expected QueryType to match")
+					assert.Equal(t, expectedWhere.column, actualWhere.column, "expected column to match")
+					assert.Equal(t, expectedWhere.operator, actualWhere.operator, "expected operator to match")
+					assert.Equal(t, expectedWhere.conj, actualWhere.conj, "expected conj to match")
+					assert.Equal(t, expectedWhere.args, actualWhere.args, "expected args to match")
+
+					if expectedWhere.queryType == QuerySub {
+						expectedSubBuilder := expectedWhere.sub.(*builder)
+						actualSubBuilder := actualWhere.sub.(*builder)
+						assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "expected table to match")
+						assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "expected columns to match")
+						assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "expected wheres to match")
+					}
+				}
+			}
+
+			assert.Equal(t, b, result, "expected OrWhereNotExists() to return the same builder instance")
+		})
+	}
+}
+
 // -----------------
 // --- BENCHMARK ---
 // -----------------
@@ -1692,5 +2104,49 @@ func BenchmarkBuilder_OrWhereSub(b *testing.B) {
 
 	for b.Loop() {
 		builder.OrWhereSub(column, operator, subFn)
+	}
+}
+
+func BenchmarkBuilder_WhereExists(b *testing.B) {
+	builder := &builder{dialect: PostgresDialect{}}
+	subFn := func(qb QueryBuilder) {
+		qb.Select("id").From("users").Where("status", "=", "active")
+	}
+
+	for b.Loop() {
+		builder.WhereExists(subFn)
+	}
+}
+
+func BenchmarkBuilder_OrWhereExists(b *testing.B) {
+	builder := &builder{dialect: PostgresDialect{}}
+	subFn := func(qb QueryBuilder) {
+		qb.Select("id").From("orders").Where("user_id", "=", 1)
+	}
+
+	for b.Loop() {
+		builder.OrWhereExists(subFn)
+	}
+}
+
+func BenchmarkBuilder_WhereNotExists(b *testing.B) {
+	builder := &builder{dialect: PostgresDialect{}}
+	subFn := func(qb QueryBuilder) {
+		qb.Select("id").From("products").Where("stock", "<", 5)
+	}
+
+	for b.Loop() {
+		builder.WhereNotExists(subFn)
+	}
+}
+
+func BenchmarkBuilder_OrWhereNotExists(b *testing.B) {
+	builder := &builder{dialect: PostgresDialect{}}
+	subFn := func(qb QueryBuilder) {
+		qb.Select("id").From("categories").Where("is_active", "=", false)
+	}
+
+	for b.Loop() {
+		builder.OrWhereNotExists(subFn)
 	}
 }
