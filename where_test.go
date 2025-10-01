@@ -511,6 +511,7 @@ func TestBuilder_WhereBetween(t *testing.T) {
 		from           any
 		to             any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
 			name:          "should add a single WHERE BETWEEN condition",
@@ -519,21 +520,58 @@ func TestBuilder_WhereBetween(t *testing.T) {
 			from:          18,
 			to:            30,
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "AND", args: []any{18, 30}},
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
 			name: "should add a second WHERE BETWEEN condition with AND",
 			initialWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "created_at",
 			from:   "2023-01-01",
 			to:     "2023-12-31",
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBetween, column: "created_at", operator: "BETWEEN", conj: "AND", args: []any{"2023-01-01", "2023-12-31"}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "created_at", operator: "BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
 			},
+		},
+		{
+			name: "should return an error for BETWEEN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			from:   18,
+			to:     30,
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name:           "should return an error for BETWEEN with nil 'from' value",
+			column:         "age",
+			from:           nil,
+			to:             30,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
+		},
+		{
+			name:           "should return an error for BETWEEN with nil 'to' value",
+			column:         "age",
+			from:           18,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
+		},
+		{
+			name:           "should return an error for BETWEEN with both 'from' and 'to' nil",
+			column:         "age",
+			from:           nil,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
 		},
 	}
 
@@ -548,6 +586,11 @@ func TestBuilder_WhereBetween(t *testing.T) {
 			result := b.WhereBetween(tt.column, tt.from, tt.to)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereBetween() to return the same builder instance")
 		})
@@ -564,29 +607,67 @@ func TestBuilder_OrWhereBetween(t *testing.T) {
 		from           any
 		to             any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE BETWEEN condition",
+			name:          "should add a single OR BETWEEN condition",
 			initialWheres: []where{},
 			column:        "age",
 			from:          18,
 			to:            30,
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "OR", args: []any{18, 30}},
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name: "should add a second OR WHERE BETWEEN condition after an AND",
+			name: "should add a second OR BETWEEN condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "created_at",
 			from:   "2023-01-01",
 			to:     "2023-12-31",
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBetween, column: "created_at", operator: "BETWEEN", conj: "OR", args: []any{"2023-01-01", "2023-12-31"}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBetween, conj: "OR", column: "created_at", operator: "BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
 			},
+		},
+		{
+			name: "should return an error for OR BETWEEN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			from:   18,
+			to:     30,
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name:           "should return an error for OR BETWEEN with nil 'from' value",
+			column:         "age",
+			from:           nil,
+			to:             30,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
+		},
+		{
+			name:           "should return an error for OR BETWEEN with nil 'to' value",
+			column:         "age",
+			from:           18,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
+		},
+		{
+			name:           "should return an error for OR BETWEEN with both 'from' and 'to' nil",
+			column:         "age",
+			from:           nil,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
 		},
 	}
 
@@ -601,6 +682,11 @@ func TestBuilder_OrWhereBetween(t *testing.T) {
 			result := b.OrWhereBetween(tt.column, tt.from, tt.to)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereBetween() to return the same builder instance")
 		})
@@ -617,6 +703,7 @@ func TestBuilder_WhereNotBetween(t *testing.T) {
 		from           any
 		to             any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
 			name:          "should add a single WHERE NOT BETWEEN condition",
@@ -625,21 +712,58 @@ func TestBuilder_WhereNotBetween(t *testing.T) {
 			from:          18,
 			to:            30,
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "AND", args: []any{18, 30}},
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
 			name: "should add a second WHERE NOT BETWEEN condition with AND",
 			initialWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "created_at",
 			from:   "2023-01-01",
 			to:     "2023-12-31",
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBetween, column: "created_at", operator: "NOT BETWEEN", conj: "AND", args: []any{"2023-01-01", "2023-12-31"}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "created_at", operator: "NOT BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
 			},
+		},
+		{
+			name: "should return an error for NOT BETWEEN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			from:   18,
+			to:     30,
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name:           "should return an error for NOT BETWEEN with nil 'from' value",
+			column:         "age",
+			from:           nil,
+			to:             30,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
+		},
+		{
+			name:           "should return an error for NOT BETWEEN with nil 'to' value",
+			column:         "age",
+			from:           18,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
+		},
+		{
+			name:           "should return an error for NOT BETWEEN with both 'from' and 'to' nil",
+			column:         "age",
+			from:           nil,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
 		},
 	}
 
@@ -654,6 +778,11 @@ func TestBuilder_WhereNotBetween(t *testing.T) {
 			result := b.WhereNotBetween(tt.column, tt.from, tt.to)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereNotBetween() to return the same builder instance")
 		})
@@ -670,29 +799,67 @@ func TestBuilder_OrWhereNotBetween(t *testing.T) {
 		from           any
 		to             any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE NOT BETWEEN condition",
+			name:          "should add a single OR NOT BETWEEN condition",
 			initialWheres: []where{},
 			column:        "age",
 			from:          18,
 			to:            30,
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "OR", args: []any{18, 30}},
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name: "should add a second OR WHERE NOT BETWEEN condition after an AND",
+			name: "should add a second OR NOT BETWEEN condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "created_at",
 			from:   "2023-01-01",
 			to:     "2023-12-31",
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBetween, column: "created_at", operator: "NOT BETWEEN", conj: "OR", args: []any{"2023-01-01", "2023-12-31"}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBetween, conj: "OR", column: "created_at", operator: "NOT BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
 			},
+		},
+		{
+			name: "should return an error for OR NOT BETWEEN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			from:   18,
+			to:     30,
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name:           "should return an error for OR NOT BETWEEN with nil 'from' value",
+			column:         "age",
+			from:           nil,
+			to:             30,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
+		},
+		{
+			name:           "should return an error for OR NOT BETWEEN with nil 'to' value",
+			column:         "age",
+			from:           18,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
+		},
+		{
+			name:           "should return an error for OR NOT BETWEEN with both 'from' and 'to' nil",
+			column:         "age",
+			from:           nil,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrBetweenNilBounds,
 		},
 	}
 
@@ -707,6 +874,11 @@ func TestBuilder_OrWhereNotBetween(t *testing.T) {
 			result := b.OrWhereNotBetween(tt.column, tt.from, tt.to)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereNotBetween() to return the same builder instance")
 		})

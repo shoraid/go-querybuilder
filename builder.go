@@ -108,6 +108,7 @@ type builder struct {
 	orderBys []orderBy
 	limit    int
 	offset   int
+	err      error
 }
 
 func New(d Dialect) QueryBuilder {

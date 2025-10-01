@@ -83,6 +83,16 @@ func (b *builder) OrWhereNotBetween(column string, from, to any) QueryBuilder {
 }
 
 func (b *builder) addWhereBetween(conj, column, operator string, from, to any) {
+	if column == "" {
+		b.addErr(ErrEmptyColumn)
+		return
+	}
+
+	if from == nil || to == nil {
+		b.addErr(ErrBetweenNilBounds)
+		return
+	}
+
 	b.wheres = append(b.wheres, where{
 		queryType: QueryBetween,
 		conj:      conj,
