@@ -123,8 +123,15 @@ func (b *builder) OrWhereNotIn(column string, values ...any) QueryBuilder {
 }
 
 func (b *builder) addWhereIn(conj, column, operator string, values ...any) {
-	if values == nil {
-		values = []any{}
+	if column == "" {
+		b.addErr(ErrEmptyColumn)
+		return
+	}
+
+	args, err := flattenArgs(values)
+	if err != nil {
+		b.addErr(err)
+		return
 	}
 
 	b.wheres = append(b.wheres, where{
@@ -132,7 +139,7 @@ func (b *builder) addWhereIn(conj, column, operator string, values ...any) {
 		conj:      conj,
 		column:    column,
 		operator:  operator,
-		args:      values,
+		args:      args,
 	})
 }
 
