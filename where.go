@@ -189,6 +189,11 @@ func (b *builder) OrWhereRaw(expr string, args ...any) QueryBuilder {
 }
 
 func (b *builder) addWhereRaw(conj, expr string, args ...any) {
+	if expr == "" {
+		b.addErr(ErrEmptyExpression)
+		return
+	}
+
 	b.wheres = append(b.wheres, where{
 		queryType: QueryRaw,
 		conj:      conj,
@@ -208,6 +213,11 @@ func (b *builder) OrWhereGroup(fn func(QueryBuilder)) QueryBuilder {
 }
 
 func (b *builder) addWhereGroup(conj string, fn func(QueryBuilder)) {
+	if fn == nil {
+		b.addErr(ErrNilFunc)
+		return
+	}
+
 	nestedBuilder := New(b.dialect).(*builder)
 	fn(nestedBuilder)
 
@@ -252,13 +262,7 @@ func (b *builder) OrWhereNotExists(sub func(QueryBuilder)) QueryBuilder {
 
 func (b *builder) addWhereSub(conj, column, operator string, fn func(QueryBuilder)) {
 	if fn == nil {
-		b.wheres = append(b.wheres, where{
-			queryType: QuerySub,
-			conj:      conj,
-			column:    column,
-			operator:  strings.ToUpper(operator),
-			sub:       nil,
-		})
+		b.addErr(ErrNilFunc)
 		return
 	}
 
