@@ -830,62 +830,287 @@ func TestPostgresDialect_CompileSelect_AddSelectSafe(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_Select_Where_Simple(t *testing.T) {
+func TestPostgresDialect_Where(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name          string
-		table         string
-		wheres        []where
+		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
 		expectedError string
 	}{
 		{
-			name:  "should build select with single basic where clause",
-			table: "users",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "id", operator: "=", args: []any{1}},
+			name: "should build query with a single basic WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("id", "=", 1)
 			},
 			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1`,
 			expectedArgs: []any{1},
 		},
 		{
-			name:  "should build select with multiple basic where clauses",
-			table: "users",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "id", operator: "=", args: []any{1}},
-				{conj: "AND", queryType: QueryBasic, column: "name", operator: "=", args: []any{"John"}},
+			name: "should build query with multiple basic where clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("id", "=", 1).
+					Where("name", "=", "John")
 			},
 			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 AND "name" = $2`,
 			expectedArgs: []any{1, "John"},
 		},
 		{
-			name:  "should build select with OR where clause",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{conj: "OR", queryType: QueryBasic, column: "price", operator: "<", args: []any{100}},
+			name: "should build query with different operator",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100)
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 OR "price" < $2`,
-			expectedArgs: []any{"electronics", 100},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1`,
+			expectedArgs: []any{100},
 		},
 		{
-			name:         "should handle empty where conditions",
-			table:        "users",
-			wheres:       []where{},
-			expectedSQL:  `SELECT * FROM "users"`,
+			name: "should build query with LIKE operator",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("name", "LIKE", "%apple%")
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "name" LIKE $1`,
+			expectedArgs: []any{"%apple%"},
+		},
+		{
+			name: "should build query with NOT LIKE operator",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("name", "NOT LIKE", "%apple%")
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "name" NOT LIKE $1`,
+			expectedArgs: []any{"%apple%"},
+		},
+		{
+			name: "should build query with IN operator and a single value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "IN", 1)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" IN ($1)`,
+			expectedArgs: []any{1},
+		},
+		{
+			name: "should build query with IN operator and multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "IN", "a", "b", "c")
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" IN ($1, $2, $3)`,
+			expectedArgs: []any{"a", "b", "c"},
+		},
+		{
+			name: "should build query with IN operator and a slice of values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "IN", []int{1, 2, 3})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" IN ($1, $2, $3)`,
+			expectedArgs: []any{1, 2, 3},
+		},
+		{
+			name: "should build query with IN operator and mixed slices",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "IN", []int{1, 2, 3}, []string{"a", "b", "c"})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" IN ($1, $2, $3, $4, $5, $6)`,
+			expectedArgs: []any{1, 2, 3, "a", "b", "c"},
+		},
+		{
+			name: "should build query with NOT IN operator and a single value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "NOT IN", 1)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" NOT IN ($1)`,
+			expectedArgs: []any{1},
+		},
+		{
+			name: "should build query with NOT IN operator and multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "NOT IN", "a", "b", "c")
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" NOT IN ($1, $2, $3)`,
+			expectedArgs: []any{"a", "b", "c"},
+		},
+		{
+			name: "should build query with NOT IN operator and a slice of values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "NOT IN", []int{1, 2, 3})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" NOT IN ($1, $2, $3)`,
+			expectedArgs: []any{1, 2, 3},
+		},
+		{
+			name: "should build query with NOT IN operator and mixed slices",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("category_id", "NOT IN", []int{1, 2, 3}, []string{"a", "b", "c"})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" NOT IN ($1, $2, $3, $4, $5, $6)`,
+			expectedArgs: []any{1, 2, 3, "a", "b", "c"},
+		},
+		{
+			name: "should build query with BETWEEN operator and multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "BETWEEN", 10, 50)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" BETWEEN $1 AND $2)`,
+			expectedArgs: []any{10, 50},
+		},
+		{
+			name: "should build query with BETWEEN operator and a slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "BETWEEN", []int{10, 50})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" BETWEEN $1 AND $2)`,
+			expectedArgs: []any{10, 50},
+		},
+		{
+			name: "should build query with NOT BETWEEN operator and multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "NOT BETWEEN", 10, 50)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" NOT BETWEEN $1 AND $2)`,
+			expectedArgs: []any{10, 50},
+		},
+		{
+			name: "should build query with NOT BETWEEN operator and a slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "NOT BETWEEN", []int{10, 50})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" NOT BETWEEN $1 AND $2)`,
+			expectedArgs: []any{10, 50},
+		},
+		{
+			name: "should build query with IS NULL operator",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("email", "IS NULL")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NULL`,
 			expectedArgs: []any{},
 		},
 		{
-			name:  "should default to AND when conjunction is missing",
-			table: "products",
-			wheres: []where{
-				{queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{ /* no conj provided */ queryType: QueryBasic, column: "price", operator: ">", args: []any{100}},
+			name: "should build query with IS NULL operator and ignore extra value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("email", "IS NULL", 123)
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "price" > $2`,
-			expectedArgs: []any{"electronics", 100},
+			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NULL`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build query with IS NOT NULL operator",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("email", "IS NOT NULL")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NOT NULL`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build query with IS NOT NULL operator and ignore extra value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("email", "IS NOT NULL", 123)
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NOT NULL`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should error when BETWEEN operator has a nil 'from' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "BETWEEN", nil, 100)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
+		{
+			name: "should error when BETWEEN operator has a nil 'to' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "BETWEEN", 50, nil)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
+		{
+			name: "should error when NOT BETWEEN operator has a nil 'from' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "NOT BETWEEN", nil, 100)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
+		{
+			name: "should error when NOT BETWEEN operator has a nil 'to' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "NOT BETWEEN", 50, nil)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
 		},
 	}
 
@@ -896,12 +1121,349 @@ func TestPostgresDialect_CompileSelect_Select_Where_Simple(t *testing.T) {
 			// Arrange
 			b := &builder{
 				dialect: PostgresDialect{},
-				action:  "select",
-				table:   tt.table,
-				wheres:  tt.wheres,
 				limit:   -1,
 				offset:  -1,
 			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != "" {
+				assert.Error(t, err, "expected an error")
+				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrWhere(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError string
+	}{
+		{
+			name: "should build query with a single OR WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("id", "=", 1).
+					OrWhere("name", "=", "John")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 OR "name" = $2`,
+			expectedArgs: []any{1, "John"},
+		},
+		{
+			name: "should build query with multiple OR WHERE clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("id", "=", 1).
+					OrWhere("name", "=", "John").
+					OrWhere("email", "LIKE", "%example.com%")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 OR "name" = $2 OR "email" LIKE $3`,
+			expectedArgs: []any{1, "John", "%example.com%"},
+		},
+		{
+			name: "should treat leading OrWhere as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrWhere("name", "=", "John")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "name" = $1`,
+			expectedArgs: []any{"John"},
+		},
+		{
+			name: "should build query with OR LIKE operator",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhere("name", "LIKE", "%apple%")
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "name" LIKE $2`,
+			expectedArgs: []any{100, "%apple%"},
+		},
+		{
+			name: "should build query with OR NOT LIKE operator",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhere("name", "NOT LIKE", "%apple%")
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "name" NOT LIKE $2`,
+			expectedArgs: []any{100, "%apple%"},
+		},
+		{
+			name: "should build query with OR IN operator and a single value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhere("category_id", "IN", 1)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" IN ($2)`,
+			expectedArgs: []any{100, 1},
+		},
+		{
+			name: "should build query with OR IN operator and multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhere("category_id", "IN", "a", "b", "c")
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" IN ($2, $3, $4)`,
+			expectedArgs: []any{100, "a", "b", "c"},
+		},
+		{
+			name: "should build query with OR IN operator and a slice of values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhere("category_id", "IN", []int{1, 2, 3})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" IN ($2, $3, $4)`,
+			expectedArgs: []any{100, 1, 2, 3},
+		},
+		{
+			name: "should build query with OR IN operator and mixed slices",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhere("category_id", "NOT IN", []int{1, 2, 3}, []string{"a", "b", "c"})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" NOT IN ($2, $3, $4, $5, $6, $7)`,
+			expectedArgs: []any{100, 1, 2, 3, "a", "b", "c"},
+		},
+		{
+			name: "should build query with OR NOT IN operator and a single value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhere("category_id", "NOT IN", 1)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" NOT IN ($2)`,
+			expectedArgs: []any{100, 1},
+		},
+		{
+			name: "should build query with OR NOT IN operator and multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhere("category_id", "NOT IN", "a", "b", "c")
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" NOT IN ($2, $3, $4)`,
+			expectedArgs: []any{100, "a", "b", "c"},
+		},
+		{
+			name: "should build query with OR NOT IN operator and a slice of values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhere("category_id", "NOT IN", []int{1, 2, 3})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" NOT IN ($2, $3, $4)`,
+			expectedArgs: []any{100, 1, 2, 3},
+		},
+		{
+			name: "should build query with OR NOT IN operator and mixed slices",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", ">", 100).
+					OrWhere("category_id", "NOT IN", []int{1, 2, 3}, []string{"a", "b", "c"})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" NOT IN ($2, $3, $4, $5, $6, $7)`,
+			expectedArgs: []any{100, 1, 2, 3, "a", "b", "c"},
+		},
+		{
+			name: "should build query with OR BETWEEN operator and multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "<", 10).
+					OrWhere("price", "BETWEEN", 10, 50)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" BETWEEN $2 AND $3)`,
+			expectedArgs: []any{10, 10, 50},
+		},
+		{
+			name: "should build query with OR BETWEEN operator and a slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "<", 10).
+					OrWhere("price", "BETWEEN", []int{10, 50})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" BETWEEN $2 AND $3)`,
+			expectedArgs: []any{10, 10, 50},
+		},
+		{
+			name: "should build query with OR NOT BETWEEN operator and multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "<", 10).
+					OrWhere("price", "NOT BETWEEN", 10, 50)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" NOT BETWEEN $2 AND $3)`,
+			expectedArgs: []any{10, 10, 50},
+		},
+		{
+			name: "should build query with OR NOT BETWEEN operator and a slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "<", 10).
+					OrWhere("price", "NOT BETWEEN", []int{10, 50})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" NOT BETWEEN $2 AND $3)`,
+			expectedArgs: []any{10, 10, 50},
+		},
+		{
+			name: "should build query with OR IS NULL operator",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("id", "=", 1).
+					OrWhere("email", "IS NULL")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 OR "email" IS NULL`,
+			expectedArgs: []any{1},
+		},
+		{
+			name: "should build query with OR IS NULL operator and ignore extra value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("id", "=", 1).
+					OrWhere("email", "IS NULL", 123)
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 OR "email" IS NULL`,
+			expectedArgs: []any{1},
+		},
+		{
+			name: "should build query with OR IS NOT NULL operator",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("id", "=", 1).
+					OrWhere("email", "IS NOT NULL")
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 OR "email" IS NOT NULL`,
+			expectedArgs: []any{1},
+		},
+		{
+			name: "should build query with OR IS NOT NULL operator and ignore extra value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Where("id", "=", 1).
+					OrWhere("email", "IS NOT NULL", 123)
+			},
+			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 OR "email" IS NOT NULL`,
+			expectedArgs: []any{1},
+		},
+		{
+			name: "should error when OR BETWEEN operator has a nil 'from' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("id", "=", 1).
+					OrWhere("price", "BETWEEN", nil, 100)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
+		{
+			name: "should error when OR BETWEEN operator has a nil 'to' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("id", "=", 1).
+					OrWhere("price", "BETWEEN", 50, nil)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
+		{
+			name: "should error when OR NOT BETWEEN operator has a nil 'from' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("id", "=", 1).
+					OrWhere("price", "NOT BETWEEN", nil, 100)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
+		{
+			name: "should error when OR NOT BETWEEN operator has a nil 'to' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("id", "=", 1).
+					OrWhere("price", "NOT BETWEEN", 50, nil)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
 
 			// Act
 			sql, args, err := b.dialect.CompileSelect(b)
@@ -956,14 +1518,24 @@ func TestPostgresDialect_WhereBetween(t *testing.T) {
 			expectedArgs: []any{10, 100, 1, 5},
 		},
 		{
-			name: "should return error when column name is empty",
+			name: "should return error when 'from' value is nil",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("products").
-					WhereBetween("", 10, 100)
+					WhereBetween("category_id", nil, 100)
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
+		{
+			name: "should return error when 'to' value is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereBetween("category_id", 50, nil)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
 		},
 	}
 
@@ -1054,6 +1626,26 @@ func TestPostgresDialect_OrWhereBetween(t *testing.T) {
 			},
 			expectedError: "WHERE clause requires non-empty column",
 		},
+		{
+			name: "should return error when 'from' value is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					OrWhereBetween("category_id", nil, 100)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
+		{
+			name: "should return error when 'to' value is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					OrWhereBetween("category_id", 50, nil)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1129,6 +1721,26 @@ func TestPostgresDialect_WhereNotBetween(t *testing.T) {
 					WhereNotBetween("", 10, 100)
 			},
 			expectedError: "WHERE clause requires non-empty column",
+		},
+		{
+			name: "should return error when 'from' value is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereNotBetween("category_id", nil, 100)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
+		{
+			name: "should return error when 'to' value is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					WhereNotBetween("category_id", 50, nil)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
 		},
 	}
 
@@ -1218,6 +1830,26 @@ func TestPostgresDialect_OrWhereNotBetween(t *testing.T) {
 					OrWhereNotBetween("", 10, 100)
 			},
 			expectedError: "WHERE clause requires non-empty column",
+		},
+		{
+			name: "should return error when 'from' value is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					OrWhereNotBetween("category_id", nil, 100)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
+		},
+		{
+			name: "should return error when 'to' value is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					OrWhereNotBetween("category_id", 50, nil)
+			},
+			expectedError: "BETWEEN clause requires two non-nil values for column",
 		},
 	}
 
@@ -2675,6 +3307,19 @@ func TestPostgresDialect_WhereGroup(t *testing.T) {
 			expectedSQL:  `SELECT * FROM "users" WHERE ("level1" = $1 AND ("level2" = $2 AND ("level3" = $3 AND ("level4" = $4 AND ("level5" = $5 AND ("level6" = $6 AND ("level7" = $7 AND ("level8" = $8 AND ("level9" = $9 AND ("level10" = $10))))))))))`,
 			expectedArgs: []any{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		},
+		{
+			name: "should return error when group has an invalid clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereGroup(func(q QueryBuilder) {
+						q.Where("age", "=", 18).
+							WhereBetween("", 50, 100)
+					})
+			},
+			expectedError: "WHERE clause requires non-empty column",
+		},
 	}
 
 	for _, tt := range tests {
@@ -3725,159 +4370,6 @@ func TestPostgresDialect_OrWhereNotExists(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_Select_Where_Combined(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name          string
-		table         string
-		wheres        []where
-		expectedSQL   string
-		expectedArgs  []any
-		expectedError string
-	}{
-		{
-			name:  "should combine basic, between, in, null, raw, sub query, and nested where conditions",
-			table: "products",
-			wheres: []where{
-				{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-				{conj: "AND", queryType: QueryBetween, column: "price", operator: "BETWEEN", args: []any{100, 500}},
-				{conj: "OR", queryType: QueryBasic, column: "status", operator: "IN", args: []any{[]any{"available", "backorder"}}},
-				{conj: "AND", queryType: QueryNull, column: "description", operator: "IS NOT NULL", args: []any{}},
-				{conj: "AND", queryType: QueryRaw, expr: "stock > ? AND warehouse_id = ?", args: []any{10, 5}},
-				{conj: "OR", queryType: QueryNested, nested: []where{
-					{queryType: QueryBasic, column: "manufacturer", operator: "=", args: []any{"Apple"}},
-					{conj: "AND", queryType: QueryBasic, column: "warranty_years", operator: ">", args: []any{1}},
-				}},
-				{conj: "AND", queryType: QuerySub, column: "id", operator: "NOT IN", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "discontinued_products",
-					columns: []column{{queryType: QueryBasic, name: "product_id"}},
-					limit:   -1,
-					offset:  -1,
-				}},
-			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "category" = $1 AND "price" BETWEEN $2 AND $3 OR "status" IN ($4, $5) AND "description" IS NOT NULL AND stock > $6 AND warehouse_id = $7 OR ("manufacturer" = $8 AND "warranty_years" > $9) AND "id" NOT IN (SELECT "product_id" FROM "discontinued_products")`,
-			expectedArgs: []any{"electronics", 100, 500, "available", "backorder", 10, 5, "Apple", 1},
-		},
-		{
-			name:  "should handle complex query with deep nesting, multiple subqueries, and all operators",
-			table: "orders",
-			wheres: []where{
-				// top-level simple where
-				{conj: "AND", queryType: QueryBasic, column: "customer_id", operator: "=", args: []any{123}},
-				{conj: "AND", queryType: QueryBasic, column: "region", operator: "=", args: []any{"EU"}},
-
-				// first-level nested group
-				{conj: "AND", queryType: QueryNested, nested: []where{
-					// IN condition
-					{queryType: QueryBasic, column: "status", operator: "IN", args: []any{[]any{"completed", "shipped"}}},
-					// OR BETWEEN condition
-					{conj: "OR", queryType: QueryBetween, column: "order_date", operator: "BETWEEN", args: []any{"2023-01-01", "2023-06-30"}},
-
-					// second-level nested group
-					{conj: "AND", queryType: QueryNested, nested: []where{
-						// RAW expression
-						{queryType: QueryRaw, expr: "total_amount > ? AND currency = ?", args: []any{500, "USD"}},
-						{conj: "OR", queryType: QueryNull, column: "tracking_number", operator: "IS NULL"},
-						{conj: "OR", queryType: QueryNull, column: "updated_at", operator: "IS NOT NULL"},
-						// subquery inside second-level group
-						{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
-							dialect: PostgresDialect{},
-							action:  "select",
-							table:   "priority_orders",
-							columns: []column{{queryType: QueryBasic, name: "order_id"}},
-							wheres: []where{
-								{queryType: QueryBasic, column: "priority_level", operator: "=", args: []any{"high"}},
-								{conj: "AND", queryType: QueryBetween, column: "created_at", operator: "BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
-							},
-							orderBys: []orderBy{{queryType: QueryBasic, column: "created_at", dir: "DESC"}},
-							limit:    10,
-							offset:   5,
-						}},
-					}},
-				}},
-
-				// top-level NOT IN subquery
-				{conj: "AND", queryType: QuerySub, column: "id", operator: "NOT IN", sub: &builder{
-					dialect: PostgresDialect{},
-					action:  "select",
-					table:   "refunded_orders",
-					columns: []column{{queryType: QueryBasic, name: "order_id"}},
-					wheres: []where{
-						{queryType: QueryBasic, column: "refund_date", operator: ">", args: []any{"2023-01-01"}},
-						{conj: "AND", queryType: QueryBasic, column: "reason", operator: "=", args: []any{"fraud"}},
-						{conj: "OR", queryType: QueryBasic, column: "store_id", operator: "IN", args: []any{[]any{11, 12, 13}}},
-					},
-					limit:  20,
-					offset: 0,
-				}},
-			},
-			expectedSQL: `SELECT * FROM "orders" WHERE "customer_id" = $1 AND "region" = $2 AND ("status" IN ($3, $4) OR "order_date" BETWEEN $5 AND $6 AND (total_amount > $7 AND currency = $8 OR "tracking_number" IS NULL OR "updated_at" IS NOT NULL AND "id" IN (SELECT "order_id" FROM "priority_orders" WHERE "priority_level" = $9 AND "created_at" BETWEEN $10 AND $11 ORDER BY "created_at" DESC LIMIT 10 OFFSET 5))) AND "id" NOT IN (SELECT "order_id" FROM "refunded_orders" WHERE "refund_date" > $12 AND "reason" = $13 OR "store_id" IN ($14, $15, $16) LIMIT 20 OFFSET 0)`,
-			expectedArgs: []any{
-				123, "EU", // $1, $2
-				"completed", "shipped", // $3, $4
-				"2023-01-01", "2023-06-30", // $5, $6
-				500, "USD", // $7, $8
-				"high",                     // $9
-				"2023-01-01", "2023-12-31", // $10, $11
-				"2023-01-01", "fraud", // $12, $13
-				11, 12, 13, // $14, $15, $16
-			},
-		},
-		{
-			name:  "should return error when nested where clause compilation fails",
-			table: "orders",
-			wheres: []where{
-				{queryType: QueryNested, nested: []where{
-					{queryType: QuerySub, column: "id", operator: "IN", sub: &builder{
-						// no dialect — will cause ToSQL() to fail
-						action:  "select",
-						table:   "broken_table",
-						columns: []column{{queryType: QueryBasic, name: "some_col"}},
-						limit:   -1,
-						offset:  -1,
-					}},
-				}},
-			},
-			expectedError: "no dialect specified", // matches builder.ToSQL() error
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			// Arrange
-			b := &builder{
-				dialect: PostgresDialect{},
-				action:  "select",
-				table:   tt.table,
-				wheres:  tt.wheres,
-				limit:   -1,
-				offset:  -1,
-			}
-
-			// Act
-			sql, args, err := b.dialect.CompileSelect(b)
-
-			// Assert
-			if tt.expectedError != "" {
-				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
-				assert.Empty(t, sql, "expected empty SQL on error")
-				assert.Empty(t, args, "expected empty args on error")
-				return
-			}
-
-			assert.NoError(t, err, "expected no error")
-			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
-			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
-		})
-	}
-}
-
 func TestPostgresDialect_CompileSelect_Select_OrderBy(t *testing.T) {
 	t.Parallel()
 
@@ -4133,22 +4625,130 @@ func BenchmarkPostgresDialect_CompileSelect_Select_Simple(b *testing.B) {
 	}
 }
 
-func BenchmarkPostgresDialect_CompileSelect_Select_Where_Simple(b *testing.B) {
-	d := PostgresDialect{}
-	builder := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "users",
-		wheres: []where{
-			{conj: "AND", queryType: QueryBasic, column: "id", operator: "=", args: []any{1}},
-			{conj: "AND", queryType: QueryBasic, column: "name", operator: "LIKE", args: []any{"%John%"}},
+func BenchmarkPostgresDialect_Where(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "single where clause",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("id", "=", 1)
+			},
 		},
-		limit:  -1,
-		offset: -1,
+		{
+			name: "multiple where clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Where("id", "=", 1).
+					Where("name", "LIKE", "test")
+			},
+		},
+		{
+			name: "single OR where clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Where("id", "=", 1).
+					OrWhere("name", "LIKE", "test")
+			},
+		},
+		{
+			name: "multiple OR where clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Where("id", "=", 1).
+					OrWhere("name", "LIKE", "test").
+					OrWhere("email", "LIKE", "test@example.com")
+			},
+		},
+		{
+			name: "between clause with multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("age", "BETWEEN", 18, 65)
+			},
+		},
+		{
+			name: "between clause with a slice",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("age", "BETWEEN", []int{18, 65})
+			},
+		},
+		{
+			name: "not between clause with multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("age", "NOT BETWEEN", 18, 65)
+			},
+		},
+		{
+			name: "not between clause with a slice",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("age", "NOT BETWEEN", []int{18, 65})
+			},
+		},
+		{
+			name: "in clause with multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("id", "IN", 1, 2, 3)
+			},
+		},
+		{
+			name: "in clause with a slice",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("id", "IN", []int{1, 2, 3})
+			},
+		},
+		{
+			name: "in clause with mixed slices",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("id", "IN", []int{1, 2, 3}, []string{"a", "b", "c"})
+			},
+		},
+		{
+			name: "not in clause with multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("id", "NOT IN", 1, 2, 3)
+			},
+		},
+		{
+			name: "not in clause with a slice",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("id", "NOT IN", []int{1, 2, 3})
+			},
+		},
+		{
+			name: "not in clause with mixed slices",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("id", "NOT IN", []int{1, 2, 3}, []string{"a", "b", "c"})
+			},
+		},
+		{
+			name: "null clause",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("email", "NULL")
+			},
+		},
+		{
+			name: "not null clause",
+			build: func(b *builder) QueryBuilder {
+				return b.Where("email", "NOT NULL")
+			},
+		},
 	}
 
-	for b.Loop() {
-		_, _, _ = d.CompileSelect(builder)
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(bd)
+
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
 	}
 }
 
@@ -4829,36 +5429,6 @@ func BenchmarkPostgresDialect_WhereNotExists(b *testing.B) {
 				_, _, _ = bd.dialect.CompileSelect(bd)
 			}
 		})
-	}
-}
-
-func BenchmarkPostgresDialect_CompileSelect_Select_Where_Combined(b *testing.B) {
-	d := PostgresDialect{}
-	builder := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "products",
-		wheres: []where{
-			{conj: "AND", queryType: QueryBasic, column: "category", operator: "=", args: []any{"electronics"}},
-			{conj: "AND", queryType: QueryBetween, column: "price", operator: "BETWEEN", args: []any{100, 500}},
-			{conj: "OR", queryType: QueryBasic, column: "status", operator: "IN", args: []any{[]any{"available", "backorder"}}},
-			{conj: "AND", queryType: QueryNull, column: "description", operator: "IS NOT NULL", args: []any{}},
-			{conj: "AND", queryType: QueryRaw, expr: "stock > ? AND warehouse_id = ?", args: []any{10, 5}},
-			{conj: "OR", queryType: QueryNested, nested: []where{
-				{queryType: QueryBasic, column: "manufacturer", operator: "=", args: []any{"Apple"}},
-				{conj: "AND", queryType: QueryBasic, column: "warranty_years", operator: ">", args: []any{1}},
-				{conj: "OR", queryType: QueryNested, nested: []where{
-					{queryType: QueryBasic, column: "rating", operator: ">=", args: []any{4}},
-					{conj: "AND", queryType: QueryBasic, column: "reviews_count", operator: ">", args: []any{50}},
-				}},
-			}},
-		},
-		limit:  -1,
-		offset: -1,
-	}
-
-	for b.Loop() {
-		_, _, _ = d.CompileSelect(builder)
 	}
 }
 

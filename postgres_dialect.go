@@ -162,13 +162,8 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 
 	for i, w := range wheres {
 		if i > 0 {
-			conj := w.conj
-			if conj == "" {
-				conj = "AND"
-			}
-
 			sb.WriteString(" ")
-			sb.WriteString(conj)
+			sb.WriteString(w.conj)
 			sb.WriteString(" ")
 		}
 
@@ -178,25 +173,16 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(" ")
 			sb.WriteString(w.operator)
 			sb.WriteString(" ")
-			if strings.Contains(w.operator, "IN") {
-				sb.WriteString("(")
-				vals := w.args[0].([]any)
-				for j, v := range vals {
-					if j > 0 {
-						sb.WriteString(", ")
-					}
-					sb.WriteString(d.Placeholder(len(*globalArgs) + 1))
-					*globalArgs = append(*globalArgs, v)
-				}
-				sb.WriteString(")")
-			} else {
-				sb.WriteString(d.Placeholder(len(*globalArgs) + 1))
-				*globalArgs = append(*globalArgs, w.args...)
-			}
+			sb.WriteString(d.Placeholder(len(*globalArgs) + 1))
+			*globalArgs = append(*globalArgs, w.args...)
 
 		case QueryBetween:
 			if w.column == "" {
 				return "", fmt.Errorf("WHERE clause requires non-empty column")
+			}
+
+			if w.args[0] == nil || w.args[1] == nil {
+				return "", fmt.Errorf("BETWEEN clause requires two non-nil values for column")
 			}
 
 			sb.WriteString("(")

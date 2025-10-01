@@ -14,8 +14,8 @@ type QueryBuilder interface {
 	ToSQL() (string, []any, error)
 
 	// Where
-	Where(column string, operator string, value any) QueryBuilder
-	OrWhere(column string, operator string, value any) QueryBuilder
+	Where(column string, operator string, values ...any) QueryBuilder
+	OrWhere(column string, operator string, values ...any) QueryBuilder
 
 	WhereBetween(column string, from, to any) QueryBuilder
 	OrWhereBetween(column string, from, to any) QueryBuilder
