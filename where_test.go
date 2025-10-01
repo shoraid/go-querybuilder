@@ -1319,25 +1319,37 @@ func TestBuilder_WhereNull(t *testing.T) {
 		initialWheres  []where
 		column         string
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single WHERE NULL condition",
+			name:          "should add a single NULL condition",
 			initialWheres: []where{},
 			column:        "deleted_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NULL", conj: "AND", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "deleted_at", operator: "IS NULL", args: []any{}},
 			},
 		},
 		{
-			name: "should add a second WHERE NULL condition with AND",
+			name: "should add a second NULL condition with AND",
 			initialWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "email_verified_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryNull, column: "email_verified_at", operator: "IS NULL", conj: "AND", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "email_verified_at", operator: "IS NULL", args: []any{}},
 			},
+		},
+		{
+			name: "should return an error for NULL condition when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -1352,6 +1364,11 @@ func TestBuilder_WhereNull(t *testing.T) {
 			result := b.WhereNull(tt.column)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereNull() to return the same builder instance")
 		})
@@ -1366,25 +1383,37 @@ func TestBuilder_OrWhereNull(t *testing.T) {
 		initialWheres  []where
 		column         string
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE NULL condition",
+			name:          "should add a single OR NULL condition",
 			initialWheres: []where{},
 			column:        "deleted_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NULL", conj: "OR", args: []any{}},
+				{queryType: QueryNull, conj: "OR", column: "deleted_at", operator: "IS NULL", args: []any{}},
 			},
 		},
 		{
-			name: "should add a second OR WHERE NULL condition after an AND",
+			name: "should add a second OR NULL condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "email_verified_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryNull, column: "email_verified_at", operator: "IS NULL", conj: "OR", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryNull, conj: "OR", column: "email_verified_at", operator: "IS NULL", args: []any{}},
 			},
+		},
+		{
+			name: "should return an error for OR NULL condition when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -1399,6 +1428,11 @@ func TestBuilder_OrWhereNull(t *testing.T) {
 			result := b.OrWhereNull(tt.column)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereNull() to return the same builder instance")
 		})
@@ -1413,25 +1447,37 @@ func TestBuilder_WhereNotNull(t *testing.T) {
 		initialWheres  []where
 		column         string
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single WHERE NOT NULL condition",
+			name:          "should add a single NOT NULL condition",
 			initialWheres: []where{},
 			column:        "deleted_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NOT NULL", conj: "AND", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "deleted_at", operator: "IS NOT NULL", args: []any{}},
 			},
 		},
 		{
-			name: "should add a second WHERE NOT NULL condition with AND",
+			name: "should add a second NOT NULL condition with AND",
 			initialWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "email_verified_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryNull, column: "email_verified_at", operator: "IS NOT NULL", conj: "AND", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "email_verified_at", operator: "IS NOT NULL", args: []any{}},
 			},
+		},
+		{
+			name: "should return an error for NOT NULL condition when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -1446,6 +1492,11 @@ func TestBuilder_WhereNotNull(t *testing.T) {
 			result := b.WhereNotNull(tt.column)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereNotNull() to return the same builder instance")
 		})
@@ -1460,25 +1511,37 @@ func TestBuilder_OrWhereNotNull(t *testing.T) {
 		initialWheres  []where
 		column         string
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE NOT NULL condition",
+			name:          "should add a single OR NOT NULL condition",
 			initialWheres: []where{},
 			column:        "deleted_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NOT NULL", conj: "OR", args: []any{}},
+				{queryType: QueryNull, conj: "OR", column: "deleted_at", operator: "IS NOT NULL", args: []any{}},
 			},
 		},
 		{
-			name: "should add a second OR WHERE NOT NULL condition after an AND",
+			name: "should add a second OR NOT NULL condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "email_verified_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryNull, column: "email_verified_at", operator: "IS NOT NULL", conj: "OR", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryNull, conj: "OR", column: "email_verified_at", operator: "IS NOT NULL", args: []any{}},
 			},
+		},
+		{
+			name: "should return an error for OR NOT NULL condition when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -1493,6 +1556,11 @@ func TestBuilder_OrWhereNotNull(t *testing.T) {
 			result := b.OrWhereNotNull(tt.column)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereNotNull() to return the same builder instance")
 		})

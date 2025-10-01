@@ -164,6 +164,11 @@ func (b *builder) OrWhereNotNull(column string) QueryBuilder {
 }
 
 func (b *builder) addWhereNull(conj, column, operator string) {
+	if column == "" {
+		b.addErr(ErrEmptyColumn)
+		return
+	}
+
 	b.wheres = append(b.wheres, where{
 		queryType: QueryNull,
 		conj:      conj,
