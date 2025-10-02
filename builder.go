@@ -14,18 +14,18 @@ type QueryBuilder interface {
 	ToSQL() (string, []any, error)
 
 	// Where
-	Where(column string, operator string, value any) QueryBuilder
-	OrWhere(column string, operator string, value any) QueryBuilder
+	Where(column string, operator string, values ...any) QueryBuilder
+	OrWhere(column string, operator string, values ...any) QueryBuilder
 
 	WhereBetween(column string, from, to any) QueryBuilder
 	OrWhereBetween(column string, from, to any) QueryBuilder
 	WhereNotBetween(column string, from, to any) QueryBuilder
 	OrWhereNotBetween(column string, from, to any) QueryBuilder
 
-	WhereIn(column string, values []any) QueryBuilder
-	OrWhereIn(column string, values []any) QueryBuilder
-	WhereNotIn(column string, values []any) QueryBuilder
-	OrWhereNotIn(column string, values []any) QueryBuilder
+	WhereIn(column string, values ...any) QueryBuilder
+	OrWhereIn(column string, values ...any) QueryBuilder
+	WhereNotIn(column string, values ...any) QueryBuilder
+	OrWhereNotIn(column string, values ...any) QueryBuilder
 
 	WhereNull(column string) QueryBuilder
 	OrWhereNull(column string) QueryBuilder
@@ -40,6 +40,11 @@ type QueryBuilder interface {
 
 	WhereSub(column, operator string, sub func(QueryBuilder)) QueryBuilder
 	OrWhereSub(column, operator string, sub func(QueryBuilder)) QueryBuilder
+
+	WhereExists(sub func(QueryBuilder)) QueryBuilder
+	OrWhereExists(sub func(QueryBuilder)) QueryBuilder
+	WhereNotExists(sub func(QueryBuilder)) QueryBuilder
+	OrWhereNotExists(sub func(QueryBuilder)) QueryBuilder
 
 	// Order By
 	OrderBy(column, direction string) QueryBuilder
@@ -61,10 +66,11 @@ type QueryType uint8
 const (
 	QueryBasic   QueryType = 1
 	QueryBetween QueryType = 2
-	QueryNested  QueryType = 3
-	QueryNull    QueryType = 4
-	QueryRaw     QueryType = 5
-	QuerySub     QueryType = 6
+	QueryIn      QueryType = 3
+	QueryNested  QueryType = 4
+	QueryNull    QueryType = 5
+	QueryRaw     QueryType = 6
+	QuerySub     QueryType = 7
 )
 
 type column struct {
@@ -102,6 +108,7 @@ type builder struct {
 	orderBys []orderBy
 	limit    int
 	offset   int
+	err      error
 }
 
 func New(d Dialect) QueryBuilder {

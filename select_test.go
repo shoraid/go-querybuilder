@@ -1,7 +1,6 @@
 package sequel
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -198,7 +197,6 @@ func TestBuilder_SelectSafe(t *testing.T) {
 
 			// Act
 			result := b.SelectSafe(tt.userInput, tt.whitelist)
-			fmt.Println("b.columns:", b.columns)
 
 			// Assert
 			assert.Equal(t, tt.expectedAction, b.action, "expected action to be set to select")

@@ -1,12 +1,8 @@
 package sequel
 
-import (
-	"fmt"
-)
-
 func (b *builder) ToSQL() (string, []any, error) {
 	if b.dialect == nil {
-		return "", nil, fmt.Errorf("no dialect specified for builder")
+		return "", nil, ErrNoDialect
 	}
 
 	switch b.action {
@@ -14,6 +10,6 @@ func (b *builder) ToSQL() (string, []any, error) {
 		return b.dialect.CompileSelect(b)
 
 	default:
-		return "", nil, fmt.Errorf("unsupported action: %s", b.action)
+		return "", nil, ErrUnsupportedAction
 	}
 }

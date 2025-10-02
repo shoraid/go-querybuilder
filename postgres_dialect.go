@@ -84,8 +84,8 @@ func (d PostgresDialect) WrapTable(expr string) string {
 }
 
 func (d PostgresDialect) CompileSelect(b *builder) (string, []any, error) {
-	if b.table == "" {
-		return "", nil, fmt.Errorf("no table specified")
+	if b.err != nil {
+		return "", nil, b.err
 	}
 
 	args := []any{}
@@ -161,13 +161,8 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 
 	for i, w := range wheres {
 		if i > 0 {
-			conj := w.conj
-			if conj == "" {
-				conj = "AND"
-			}
-
 			sb.WriteString(" ")
-			sb.WriteString(conj)
+			sb.WriteString(w.conj)
 			sb.WriteString(" ")
 		}
 
@@ -177,23 +172,11 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(" ")
 			sb.WriteString(w.operator)
 			sb.WriteString(" ")
-			if strings.Contains(w.operator, "IN") {
-				sb.WriteString("(")
-				vals := w.args[0].([]any)
-				for j, v := range vals {
-					if j > 0 {
-						sb.WriteString(", ")
-					}
-					sb.WriteString(d.Placeholder(len(*globalArgs) + 1))
-					*globalArgs = append(*globalArgs, v)
-				}
-				sb.WriteString(")")
-			} else {
-				sb.WriteString(d.Placeholder(len(*globalArgs) + 1))
-				*globalArgs = append(*globalArgs, w.args...)
-			}
+			sb.WriteString(d.Placeholder(len(*globalArgs) + 1))
+			*globalArgs = append(*globalArgs, w.args...)
 
 		case QueryBetween:
+			sb.WriteString("(")
 			sb.WriteString(d.WrapColumn(w.column))
 			sb.WriteString(" ")
 			sb.WriteString(w.operator)
@@ -201,6 +184,31 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(d.Placeholder(len(*globalArgs) + 1))
 			sb.WriteString(" AND ")
 			sb.WriteString(d.Placeholder(len(*globalArgs) + 2))
+			sb.WriteString(")")
+			*globalArgs = append(*globalArgs, w.args...)
+
+		case QueryIn:
+			if len(w.args) == 0 {
+				if w.operator == "NOT IN" {
+					sb.WriteString("1 = 1")
+				} else {
+					sb.WriteString("1 = 0")
+				}
+				return sb.String(), nil
+			}
+
+			sb.WriteString(d.WrapColumn(w.column))
+			sb.WriteString(" ")
+			sb.WriteString(w.operator)
+			sb.WriteString(" (")
+
+			for i := range w.args {
+				if i > 0 {
+					sb.WriteString(", ")
+				}
+				sb.WriteString(d.Placeholder(len(*globalArgs) + i + 1))
+			}
+			sb.WriteString(")")
 			*globalArgs = append(*globalArgs, w.args...)
 
 		case QueryNull:
@@ -210,10 +218,12 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 
 		case QueryRaw:
 			expr := w.expr
-			for _, a := range w.args {
+
+			for _, arg := range w.args {
 				expr = strings.Replace(expr, "?", d.Placeholder(len(*globalArgs)+1), 1)
-				*globalArgs = append(*globalArgs, a)
+				*globalArgs = append(*globalArgs, arg)
 			}
+
 			sb.WriteString(expr)
 
 		case QueryNested:

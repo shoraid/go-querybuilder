@@ -3,8 +3,12 @@ package sequel
 import "fmt"
 
 func (b *builder) From(table string) QueryBuilder {
-	b.table = table
+	if table == "" {
+		b.addErr(ErrEmptyTable)
+		return b
+	}
 
+	b.table = table
 	return b
 }
 

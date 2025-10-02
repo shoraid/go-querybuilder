@@ -14,51 +14,305 @@ func TestBuilder_Where(t *testing.T) {
 		initialWheres  []where
 		column         string
 		operator       string
-		value          any
+		values         []any
 		expectedWheres []where
+		expectedError  error
 	}{
+		// -------------------------------------------
+		// --------------- Where Basic ---------------
+		// -------------------------------------------
 		{
 			name:          "should add a single WHERE condition",
 			initialWheres: []where{},
 			column:        "id",
 			operator:      "=",
-			value:         1,
+			values:        []any{1},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 		},
 		{
 			name: "should add a second WHERE condition with AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column:   "name",
 			operator: "=",
-			value:    "John",
+			values:   []any{"John"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBasic, column: "name", operator: "=", conj: "AND", args: []any{"John"}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "name", operator: "=", args: []any{"John"}},
 			},
 		},
 		{
 			name:          "should handle different operators",
 			initialWheres: []where{},
-			column:        "age",
-			operator:      ">",
-			value:         18,
+			column:        "email",
+			operator:      "LIKE",
+			values:        []any{"%example%"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "age", operator: ">", conj: "AND", args: []any{18}},
+				{queryType: QueryBasic, conj: "AND", column: "email", operator: "LIKE", args: []any{"%example%"}},
 			},
 		},
 		{
-			name:          "should handle IN operator",
+			name:          "should handle empty values slice for basic operator",
+			initialWheres: []where{},
+			column:        "id",
+			operator:      "=",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{}},
+			},
+		},
+		{
+			name:          "should handle nil values for basic operator",
+			initialWheres: []where{},
+			column:        "id",
+			operator:      "=",
+			values:        nil,
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// ---------------- Where In -----------------
+		// -------------------------------------------
+		{
+			name:          "should handle IN operator with multiple values",
 			initialWheres: []where{},
 			column:        "category",
 			operator:      "IN",
-			value:         []string{"A", "B"},
+			values:        []any{"A", "B"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "category", operator: "IN", conj: "AND", args: []any{[]string{"A", "B"}}},
+				{queryType: QueryIn, conj: "AND", column: "category", operator: "IN", args: []any{"A", "B"}},
 			},
+		},
+		{
+			name:          "should handle IN operator with mixed slices",
+			initialWheres: []where{},
+			column:        "category",
+			operator:      "IN",
+			values:        []any{[]int{1, 2}, []string{"A", "B"}},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "AND", column: "category", operator: "IN", args: []any{1, 2, "A", "B"}},
+			},
+		},
+
+		// -------------------------------------------
+		// -------------- Where Not In ---------------
+		// -------------------------------------------
+		{
+			name:          "should handle NOT IN operator with multiple values",
+			initialWheres: []where{},
+			column:        "order_id",
+			operator:      "NOT IN",
+			values:        []any{1, 2, 3},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "AND", column: "order_id", operator: "NOT IN", args: []any{1, 2, 3}},
+			},
+		},
+		{
+			name:          "should handle NOT IN operator with mixed slices",
+			initialWheres: []where{},
+			column:        "order_id",
+			operator:      "NOT IN",
+			values:        []any{[]int{1, 2}, []string{"A", "B"}},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "AND", column: "order_id", operator: "NOT IN", args: []any{1, 2, "A", "B"}},
+			},
+		},
+
+		// -------------------------------------------
+		// --------------- Where Null ----------------
+		// -------------------------------------------
+		{
+			name:          "should handle IS NULL operator",
+			initialWheres: []where{},
+			column:        "deleted_at",
+			operator:      "IS NULL",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "AND", column: "deleted_at", operator: "IS NULL", args: []any{}},
+			},
+		},
+		{
+			name:          "should ignore values for IS NULL operator",
+			initialWheres: []where{},
+			column:        "deleted_at",
+			operator:      "IS NULL",
+			values:        []any{1, 2, 3}, // These should be ignored
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "AND", column: "deleted_at", operator: "IS NULL", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// ------------- Where Not Null --------------
+		// -------------------------------------------
+		{
+			name:          "should handle IS NOT NULL operator",
+			initialWheres: []where{},
+			column:        "updated_at",
+			operator:      "IS NOT NULL",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "AND", column: "updated_at", operator: "IS NOT NULL", args: []any{}},
+			},
+		},
+		{
+			name:          "should ignore values for IS NOT NULL operator",
+			initialWheres: []where{},
+			column:        "updated_at",
+			operator:      "IS NOT NULL",
+			values:        []any{1, 2, 3}, // These should be ignored
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "AND", column: "updated_at", operator: "IS NOT NULL", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// -------------- Where Between --------------
+		// -------------------------------------------
+		{
+			name:          "should handle BETWEEN operator with two scalar values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18, 30},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should handle BETWEEN operator with a slice of two values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, 30}},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should handle BETWEEN operator with too many values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18, 30, 40},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should handle BETWEEN operator with a slice of incorrect length",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, 30, 40}},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should return an error for BETWEEN with nil values",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{nil, 30},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for BETWEEN with a slice containing nil",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, nil}},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for BETWEEN with too few values",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for BETWEEN with a slice single value",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]int{18}},
+			expectedError: ErrNilNotAllowed,
+		},
+
+		// -------------------------------------------
+		// ------------ Where Not Between ------------
+		// -------------------------------------------
+		{
+			name:          "should handle NOT BETWEEN operator with two scalar values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{18, 30},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should handle NOT BETWEEN operator with a slice of two values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, 30}},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should handle NOT BETWEEN operator with too many values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{18, 30, 40},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should handle NOT BETWEEN operator with a slice of incorrect length",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, 30, 40}},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should return an error for NOT BETWEEN with nil values",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{nil, 30},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for NOT BETWEEN with a slice containing nil",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, nil}},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for NOT BETWEEN with too few values",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{18},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for NOT BETWEEN with a slice single value",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]int{18}},
+			expectedError: ErrNilNotAllowed,
 		},
 	}
 
@@ -70,9 +324,14 @@ func TestBuilder_Where(t *testing.T) {
 			b := &builder{wheres: tt.initialWheres}
 
 			// Act
-			result := b.Where(tt.column, tt.operator, tt.value)
+			result := b.Where(tt.column, tt.operator, tt.values...)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected Where() to return the same builder instance")
 		})
@@ -87,51 +346,295 @@ func TestBuilder_OrWhere(t *testing.T) {
 		initialWheres  []where
 		column         string
 		operator       string
-		value          any
+		values         []any
 		expectedWheres []where
+		expectedError  error
 	}{
+		// -------------------------------------------
+		// --------------- OrWhere Basic -------------
+		// -------------------------------------------
 		{
 			name:          "should add a single OR WHERE condition",
 			initialWheres: []where{},
 			column:        "id",
 			operator:      "=",
-			value:         1,
+			values:        []any{1},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "OR", args: []any{1}},
+				{queryType: QueryBasic, conj: "OR", column: "id", operator: "=", args: []any{1}},
 			},
 		},
 		{
-			name: "should add an OR WHERE condition after an AND condition",
+			name: "should add a second OR WHERE condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column:   "name",
 			operator: "=",
-			value:    "John",
+			values:   []any{"John"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBasic, column: "name", operator: "=", conj: "OR", args: []any{"John"}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBasic, conj: "OR", column: "name", operator: "=", args: []any{"John"}},
 			},
 		},
 		{
 			name:          "should handle different operators with OR",
 			initialWheres: []where{},
-			column:        "age",
-			operator:      "<",
-			value:         18,
+			column:        "email",
+			operator:      "LIKE",
+			values:        []any{"%example%"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "age", operator: "<", conj: "OR", args: []any{18}},
+				{queryType: QueryBasic, conj: "OR", column: "email", operator: "LIKE", args: []any{"%example%"}},
 			},
 		},
 		{
-			name:          "should handle IN operator with OR",
+			name:          "should handle empty values slice for basic operator with OR",
+			initialWheres: []where{},
+			column:        "id",
+			operator:      "=",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "OR", column: "id", operator: "=", args: []any{}},
+			},
+		},
+		{
+			name:          "should handle nil values for basic operator with OR",
+			initialWheres: []where{},
+			column:        "id",
+			operator:      "=",
+			values:        nil,
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "OR", column: "id", operator: "=", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// --------------- OrWhere In ----------------
+		// -------------------------------------------
+		{
+			name:          "should handle IN operator with multiple values with OR",
 			initialWheres: []where{},
 			column:        "category",
-			operator:      "NOT IN",
-			value:         []string{"A", "B"},
+			operator:      "IN",
+			values:        []any{"A", "B"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "category", operator: "NOT IN", conj: "OR", args: []any{[]string{"A", "B"}}},
+				{queryType: QueryIn, conj: "OR", column: "category", operator: "IN", args: []any{"A", "B"}},
 			},
+		},
+		{
+			name:          "should handle IN operator with mixed slices with OR",
+			initialWheres: []where{},
+			column:        "category",
+			operator:      "IN",
+			values:        []any{[]int{1, 2}, []string{"A", "B"}},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "OR", column: "category", operator: "IN", args: []any{1, 2, "A", "B"}},
+			},
+		},
+
+		// -------------------------------------------
+		// ------------- OrWhere Not In --------------
+		// -------------------------------------------
+		{
+			name:          "should handle NOT IN operator with multiple values with OR",
+			initialWheres: []where{},
+			column:        "order_id",
+			operator:      "NOT IN",
+			values:        []any{1, 2, 3},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "OR", column: "order_id", operator: "NOT IN", args: []any{1, 2, 3}},
+			},
+		},
+		{
+			name:          "should handle NOT IN operator with mixed slices with OR",
+			initialWheres: []where{},
+			column:        "order_id",
+			operator:      "NOT IN",
+			values:        []any{[]int{1, 2}, []string{"A", "B"}},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "OR", column: "order_id", operator: "NOT IN", args: []any{1, 2, "A", "B"}},
+			},
+		},
+
+		// -------------------------------------------
+		// -------------- OrWhere Null ---------------
+		// -------------------------------------------
+		{
+			name:          "should handle IS NULL operator with OR",
+			initialWheres: []where{},
+			column:        "deleted_at",
+			operator:      "IS NULL",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "OR", column: "deleted_at", operator: "IS NULL", args: []any{}},
+			},
+		},
+		{
+			name:          "should ignore values for IS NULL operator with OR",
+			initialWheres: []where{},
+			column:        "deleted_at",
+			operator:      "IS NULL",
+			values:        []any{1, 2, 3}, // These should be ignored
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "OR", column: "deleted_at", operator: "IS NULL", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// ------------ OrWhere Not Null -------------
+		// -------------------------------------------
+		{
+			name:          "should handle IS NOT NULL operator with OR",
+			initialWheres: []where{},
+			column:        "updated_at",
+			operator:      "IS NOT NULL",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "OR", column: "updated_at", operator: "IS NOT NULL", args: []any{}},
+			},
+		},
+		{
+			name:          "should ignore values for IS NOT NULL operator with OR",
+			initialWheres: []where{},
+			column:        "updated_at",
+			operator:      "IS NOT NULL",
+			values:        []any{1, 2, 3}, // These should be ignored
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "OR", column: "updated_at", operator: "IS NOT NULL", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// ------------ OrWhere Between --------------
+		// -------------------------------------------
+		{
+			name:          "should handle BETWEEN operator with two scalar values with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18, 30},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should handle BETWEEN operator with a slice of two values with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, 30}},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should handle BETWEEN operator with too many values with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18, 30, 40},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should handle BETWEEN operator with a slice of incorrect length with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, 30, 40}},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should return an error for OR BETWEEN with nil values",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{nil, 30},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR BETWEEN with a slice containing nil",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, nil}},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR BETWEEN with too few values",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR BETWEEN with a slice single value",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]int{18}},
+			expectedError: ErrNilNotAllowed,
+		},
+
+		// -------------------------------------------
+		// ---------- OrWhere Not Between ------------
+		// -------------------------------------------
+		{
+			name:          "should handle NOT BETWEEN operator with two scalar values with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{18, 30},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should handle NOT BETWEEN operator with a slice of two values with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, 30}},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should handle NOT BETWEEN operator with a slice of incorrect length with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, 30, 40}},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
+			},
+		},
+		{
+			name:          "should return an error for OR NOT BETWEEN with nil values",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{nil, 30},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR NOT BETWEEN with a slice containing nil",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, nil}},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR NOT BETWEEN with too few values",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{18},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR NOT BETWEEN with a slice single value",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]int{18}},
+			expectedError: ErrNilNotAllowed,
 		},
 	}
 
@@ -143,9 +646,14 @@ func TestBuilder_OrWhere(t *testing.T) {
 			b := &builder{wheres: tt.initialWheres}
 
 			// Act
-			result := b.OrWhere(tt.column, tt.operator, tt.value)
+			result := b.OrWhere(tt.column, tt.operator, tt.values...)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhere() to return the same builder instance")
 		})
@@ -162,6 +670,7 @@ func TestBuilder_WhereBetween(t *testing.T) {
 		from           any
 		to             any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
 			name:          "should add a single WHERE BETWEEN condition",
@@ -170,21 +679,58 @@ func TestBuilder_WhereBetween(t *testing.T) {
 			from:          18,
 			to:            30,
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "AND", args: []any{18, 30}},
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
 			name: "should add a second WHERE BETWEEN condition with AND",
 			initialWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "created_at",
 			from:   "2023-01-01",
 			to:     "2023-12-31",
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBetween, column: "created_at", operator: "BETWEEN", conj: "AND", args: []any{"2023-01-01", "2023-12-31"}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "created_at", operator: "BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
 			},
+		},
+		{
+			name: "should return an error for BETWEEN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			from:   18,
+			to:     30,
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name:           "should return an error for BETWEEN with nil 'from' value",
+			column:         "age",
+			from:           nil,
+			to:             30,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
+		},
+		{
+			name:           "should return an error for BETWEEN with nil 'to' value",
+			column:         "age",
+			from:           18,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
+		},
+		{
+			name:           "should return an error for BETWEEN with both 'from' and 'to' nil",
+			column:         "age",
+			from:           nil,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
 		},
 	}
 
@@ -199,6 +745,11 @@ func TestBuilder_WhereBetween(t *testing.T) {
 			result := b.WhereBetween(tt.column, tt.from, tt.to)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereBetween() to return the same builder instance")
 		})
@@ -215,29 +766,67 @@ func TestBuilder_OrWhereBetween(t *testing.T) {
 		from           any
 		to             any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE BETWEEN condition",
+			name:          "should add a single OR BETWEEN condition",
 			initialWheres: []where{},
 			column:        "age",
 			from:          18,
 			to:            30,
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "OR", args: []any{18, 30}},
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name: "should add a second OR WHERE BETWEEN condition after an AND",
+			name: "should add a second OR BETWEEN condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "created_at",
 			from:   "2023-01-01",
 			to:     "2023-12-31",
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBetween, column: "created_at", operator: "BETWEEN", conj: "OR", args: []any{"2023-01-01", "2023-12-31"}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBetween, conj: "OR", column: "created_at", operator: "BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
 			},
+		},
+		{
+			name: "should return an error for OR BETWEEN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			from:   18,
+			to:     30,
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name:           "should return an error for OR BETWEEN with nil 'from' value",
+			column:         "age",
+			from:           nil,
+			to:             30,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
+		},
+		{
+			name:           "should return an error for OR BETWEEN with nil 'to' value",
+			column:         "age",
+			from:           18,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
+		},
+		{
+			name:           "should return an error for OR BETWEEN with both 'from' and 'to' nil",
+			column:         "age",
+			from:           nil,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
 		},
 	}
 
@@ -252,6 +841,11 @@ func TestBuilder_OrWhereBetween(t *testing.T) {
 			result := b.OrWhereBetween(tt.column, tt.from, tt.to)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereBetween() to return the same builder instance")
 		})
@@ -268,6 +862,7 @@ func TestBuilder_WhereNotBetween(t *testing.T) {
 		from           any
 		to             any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
 			name:          "should add a single WHERE NOT BETWEEN condition",
@@ -276,21 +871,58 @@ func TestBuilder_WhereNotBetween(t *testing.T) {
 			from:          18,
 			to:            30,
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "AND", args: []any{18, 30}},
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
 			name: "should add a second WHERE NOT BETWEEN condition with AND",
 			initialWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "created_at",
 			from:   "2023-01-01",
 			to:     "2023-12-31",
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBetween, column: "created_at", operator: "NOT BETWEEN", conj: "AND", args: []any{"2023-01-01", "2023-12-31"}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "created_at", operator: "NOT BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
 			},
+		},
+		{
+			name: "should return an error for NOT BETWEEN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			from:   18,
+			to:     30,
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name:           "should return an error for NOT BETWEEN with nil 'from' value",
+			column:         "age",
+			from:           nil,
+			to:             30,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
+		},
+		{
+			name:           "should return an error for NOT BETWEEN with nil 'to' value",
+			column:         "age",
+			from:           18,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
+		},
+		{
+			name:           "should return an error for NOT BETWEEN with both 'from' and 'to' nil",
+			column:         "age",
+			from:           nil,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
 		},
 	}
 
@@ -305,6 +937,11 @@ func TestBuilder_WhereNotBetween(t *testing.T) {
 			result := b.WhereNotBetween(tt.column, tt.from, tt.to)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereNotBetween() to return the same builder instance")
 		})
@@ -321,29 +958,67 @@ func TestBuilder_OrWhereNotBetween(t *testing.T) {
 		from           any
 		to             any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE NOT BETWEEN condition",
+			name:          "should add a single OR NOT BETWEEN condition",
 			initialWheres: []where{},
 			column:        "age",
 			from:          18,
 			to:            30,
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "OR", args: []any{18, 30}},
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name: "should add a second OR WHERE NOT BETWEEN condition after an AND",
+			name: "should add a second OR NOT BETWEEN condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "created_at",
 			from:   "2023-01-01",
 			to:     "2023-12-31",
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBetween, column: "created_at", operator: "NOT BETWEEN", conj: "OR", args: []any{"2023-01-01", "2023-12-31"}},
+				{queryType: QueryBetween, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBetween, conj: "OR", column: "created_at", operator: "NOT BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
 			},
+		},
+		{
+			name: "should return an error for OR NOT BETWEEN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			from:   18,
+			to:     30,
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name:           "should return an error for OR NOT BETWEEN with nil 'from' value",
+			column:         "age",
+			from:           nil,
+			to:             30,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
+		},
+		{
+			name:           "should return an error for OR NOT BETWEEN with nil 'to' value",
+			column:         "age",
+			from:           18,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
+		},
+		{
+			name:           "should return an error for OR NOT BETWEEN with both 'from' and 'to' nil",
+			column:         "age",
+			from:           nil,
+			to:             nil,
+			expectedWheres: nil,
+			expectedError:  ErrNilNotAllowed,
 		},
 	}
 
@@ -358,6 +1033,11 @@ func TestBuilder_OrWhereNotBetween(t *testing.T) {
 			result := b.OrWhereNotBetween(tt.column, tt.from, tt.to)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereNotBetween() to return the same builder instance")
 		})
@@ -373,26 +1053,36 @@ func TestBuilder_WhereIn(t *testing.T) {
 		column         string
 		values         []any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single WHERE IN condition",
+			name:          "should add a single IN condition with a single value",
+			initialWheres: []where{},
+			column:        "id",
+			values:        []any{1},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "AND", column: "id", operator: "IN", args: []any{1}},
+			},
+		},
+		{
+			name:          "should add a single IN condition with multiple values",
 			initialWheres: []where{},
 			column:        "status",
 			values:        []any{"active", "pending"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "status", operator: "IN", conj: "AND", args: []any{[]any{"active", "pending"}}},
+				{queryType: QueryIn, conj: "AND", column: "status", operator: "IN", args: []any{"active", "pending"}},
 			},
 		},
 		{
-			name: "should add a second WHERE IN condition with AND",
+			name: "should add a second IN condition with AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "category",
 			values: []any{"electronics", "books"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBasic, column: "category", operator: "IN", conj: "AND", args: []any{[]any{"electronics", "books"}}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryIn, conj: "AND", column: "category", operator: "IN", args: []any{"electronics", "books"}},
 			},
 		},
 		{
@@ -401,8 +1091,39 @@ func TestBuilder_WhereIn(t *testing.T) {
 			column:        "id",
 			values:        []any{},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "IN", conj: "AND", args: []any{[]any{}}},
+				{queryType: QueryIn, conj: "AND", column: "id", operator: "IN", args: []any{}},
 			},
+		},
+		{
+			name:          "should handle nil value",
+			initialWheres: []where{},
+			column:        "id",
+			values:        nil,
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "AND", column: "id", operator: "IN", args: []any{}},
+			},
+		},
+		{
+			name: "should return an error for IN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column:         "",
+			values:         []any{1, 2, 3},
+			expectedWheres: []where{{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}}},
+			expectedError:  ErrEmptyColumn,
+		},
+		{
+			name:          "should return an error when slice contains nil values",
+			column:        "id",
+			values:        []any{10, nil, 30},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for IN when values is nested slice",
+			column:        "id",
+			values:        []any{[]any{[]int{1, 2}}, []int{3, 4}},
+			expectedError: ErrNestedSlice,
 		},
 	}
 
@@ -414,9 +1135,14 @@ func TestBuilder_WhereIn(t *testing.T) {
 			b := &builder{wheres: tt.initialWheres}
 
 			// Act
-			result := b.WhereIn(tt.column, tt.values)
+			result := b.WhereIn(tt.column, tt.values...)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereIn() to return the same builder instance")
 		})
@@ -432,36 +1158,79 @@ func TestBuilder_OrWhereIn(t *testing.T) {
 		column         string
 		values         []any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE IN condition",
+			name:          "should add a single OR IN condition with a single value",
+			initialWheres: []where{},
+			column:        "id",
+			values:        []any{1},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "OR", column: "id", operator: "IN", args: []any{1}},
+			},
+		},
+		{
+			name:          "should add a single OR IN condition with multiple values",
 			initialWheres: []where{},
 			column:        "status",
 			values:        []any{"active", "pending"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "status", operator: "IN", conj: "OR", args: []any{[]any{"active", "pending"}}},
+				{queryType: QueryIn, conj: "OR", column: "status", operator: "IN", args: []any{"active", "pending"}},
 			},
 		},
 		{
-			name: "should add a second OR WHERE IN condition after an AND",
+			name: "should add a second OR IN condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "category",
 			values: []any{"electronics", "books"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBasic, column: "category", operator: "IN", conj: "OR", args: []any{[]any{"electronics", "books"}}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryIn, conj: "OR", column: "category", operator: "IN", args: []any{"electronics", "books"}},
 			},
 		},
 		{
-			name:          "should handle empty values slice with OR",
+			name:          "should handle empty values slice with OR IN",
 			initialWheres: []where{},
 			column:        "id",
 			values:        []any{},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "IN", conj: "OR", args: []any{[]any{}}},
+				{queryType: QueryIn, conj: "OR", column: "id", operator: "IN", args: []any{}},
 			},
+		},
+		{
+			name:          "should handle nil value with OR IN",
+			initialWheres: []where{},
+			column:        "id",
+			values:        nil,
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "OR", column: "id", operator: "IN", args: []any{}},
+			},
+		},
+		{
+			name: "should return an error for OR IN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			values: []any{1, 2, 3},
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name:          "should return an error when slice contains nil values with OR",
+			column:        "id",
+			values:        []any{10, nil, 30},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR IN when values is nested slice",
+			column:        "id",
+			values:        []any{[]any{[]int{1, 2}}, []int{3, 4}},
+			expectedError: ErrNestedSlice,
 		},
 	}
 
@@ -473,9 +1242,14 @@ func TestBuilder_OrWhereIn(t *testing.T) {
 			b := &builder{wheres: tt.initialWheres}
 
 			// Act
-			result := b.OrWhereIn(tt.column, tt.values)
+			result := b.OrWhereIn(tt.column, tt.values...)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereIn() to return the same builder instance")
 		})
@@ -491,26 +1265,36 @@ func TestBuilder_WhereNotIn(t *testing.T) {
 		column         string
 		values         []any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single WHERE NOT IN condition",
+			name:          "should add a single NOT IN condition with a single value",
+			initialWheres: []where{},
+			column:        "id",
+			values:        []any{1},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "AND", column: "id", operator: "NOT IN", args: []any{1}},
+			},
+		},
+		{
+			name:          "should add a single NOT IN condition with multiple values",
 			initialWheres: []where{},
 			column:        "status",
 			values:        []any{"deleted", "archived"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "status", operator: "NOT IN", conj: "AND", args: []any{[]any{"deleted", "archived"}}},
+				{queryType: QueryIn, conj: "AND", column: "status", operator: "NOT IN", args: []any{"deleted", "archived"}},
 			},
 		},
 		{
-			name: "should add a second WHERE NOT IN condition with AND",
+			name: "should add a second NOT IN condition with AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "category",
 			values: []any{"electronics", "books"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBasic, column: "category", operator: "NOT IN", conj: "AND", args: []any{[]any{"electronics", "books"}}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryIn, conj: "AND", column: "category", operator: "NOT IN", args: []any{"electronics", "books"}},
 			},
 		},
 		{
@@ -519,8 +1303,41 @@ func TestBuilder_WhereNotIn(t *testing.T) {
 			column:        "id",
 			values:        []any{},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "NOT IN", conj: "AND", args: []any{[]any{}}},
+				{queryType: QueryIn, conj: "AND", column: "id", operator: "NOT IN", args: []any{}},
 			},
+		},
+		{
+			name:          "should handle nil value",
+			initialWheres: []where{},
+			column:        "id",
+			values:        nil,
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "AND", column: "id", operator: "NOT IN", args: []any{}},
+			},
+		},
+		{
+			name: "should return an error for NOT IN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			values: []any{1, 2, 3},
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name:          "should return an error when slice contains nil values",
+			column:        "id",
+			values:        []any{10, nil, 30},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for NOT IN when values is nested slice",
+			column:        "id",
+			values:        []any{[]any{[]int{1, 2}}, []int{3, 4}},
+			expectedError: ErrNestedSlice,
 		},
 	}
 
@@ -532,9 +1349,14 @@ func TestBuilder_WhereNotIn(t *testing.T) {
 			b := &builder{wheres: tt.initialWheres}
 
 			// Act
-			result := b.WhereNotIn(tt.column, tt.values)
+			result := b.WhereNotIn(tt.column, tt.values...)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereNotIn() to return the same builder instance")
 		})
@@ -550,26 +1372,36 @@ func TestBuilder_OrWhereNotIn(t *testing.T) {
 		column         string
 		values         []any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE NOT IN condition",
+			name:          "should add a single OR NOT IN condition with a single value",
+			initialWheres: []where{},
+			column:        "id",
+			values:        []any{1},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "OR", column: "id", operator: "NOT IN", args: []any{1}},
+			},
+		},
+		{
+			name:          "should add a single OR NOT IN condition with multiple values",
 			initialWheres: []where{},
 			column:        "status",
 			values:        []any{"deleted", "archived"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "status", operator: "NOT IN", conj: "OR", args: []any{[]any{"deleted", "archived"}}},
+				{queryType: QueryIn, conj: "OR", column: "status", operator: "NOT IN", args: []any{"deleted", "archived"}},
 			},
 		},
 		{
-			name: "should add a second OR WHERE NOT IN condition after an AND",
+			name: "should add a second OR NOT IN condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "category",
 			values: []any{"electronics", "books"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBasic, column: "category", operator: "NOT IN", conj: "OR", args: []any{[]any{"electronics", "books"}}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryIn, conj: "OR", column: "category", operator: "NOT IN", args: []any{"electronics", "books"}},
 			},
 		},
 		{
@@ -578,8 +1410,41 @@ func TestBuilder_OrWhereNotIn(t *testing.T) {
 			column:        "id",
 			values:        []any{},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "NOT IN", conj: "OR", args: []any{[]any{}}},
+				{queryType: QueryIn, conj: "OR", column: "id", operator: "NOT IN", args: []any{}},
 			},
+		},
+		{
+			name:          "should handle slice with nil values with OR",
+			initialWheres: []where{},
+			column:        "id",
+			values:        nil,
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "OR", column: "id", operator: "NOT IN", args: []any{}},
+			},
+		},
+		{
+			name: "should return an error for OR NOT IN when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			values: []any{1, 2, 3},
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name:          "should return an error when slice contains nil values with OR",
+			column:        "id",
+			values:        []any{10, nil, 30},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR NOT IN when values is nested slice",
+			column:        "id",
+			values:        []any{[]any{[]int{1, 2}}, []int{3, 4}},
+			expectedError: ErrNestedSlice,
 		},
 	}
 
@@ -591,9 +1456,14 @@ func TestBuilder_OrWhereNotIn(t *testing.T) {
 			b := &builder{wheres: tt.initialWheres}
 
 			// Act
-			result := b.OrWhereNotIn(tt.column, tt.values)
+			result := b.OrWhereNotIn(tt.column, tt.values...)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereNotIn() to return the same builder instance")
 		})
@@ -608,25 +1478,37 @@ func TestBuilder_WhereNull(t *testing.T) {
 		initialWheres  []where
 		column         string
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single WHERE NULL condition",
+			name:          "should add a single NULL condition",
 			initialWheres: []where{},
 			column:        "deleted_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NULL", conj: "AND", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "deleted_at", operator: "IS NULL", args: []any{}},
 			},
 		},
 		{
-			name: "should add a second WHERE NULL condition with AND",
+			name: "should add a second NULL condition with AND",
 			initialWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "email_verified_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryNull, column: "email_verified_at", operator: "IS NULL", conj: "AND", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "email_verified_at", operator: "IS NULL", args: []any{}},
 			},
+		},
+		{
+			name: "should return an error for NULL condition when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -641,6 +1523,11 @@ func TestBuilder_WhereNull(t *testing.T) {
 			result := b.WhereNull(tt.column)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereNull() to return the same builder instance")
 		})
@@ -655,25 +1542,37 @@ func TestBuilder_OrWhereNull(t *testing.T) {
 		initialWheres  []where
 		column         string
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE NULL condition",
+			name:          "should add a single OR NULL condition",
 			initialWheres: []where{},
 			column:        "deleted_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NULL", conj: "OR", args: []any{}},
+				{queryType: QueryNull, conj: "OR", column: "deleted_at", operator: "IS NULL", args: []any{}},
 			},
 		},
 		{
-			name: "should add a second OR WHERE NULL condition after an AND",
+			name: "should add a second OR NULL condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "email_verified_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryNull, column: "email_verified_at", operator: "IS NULL", conj: "OR", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryNull, conj: "OR", column: "email_verified_at", operator: "IS NULL", args: []any{}},
 			},
+		},
+		{
+			name: "should return an error for OR NULL condition when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -688,6 +1587,11 @@ func TestBuilder_OrWhereNull(t *testing.T) {
 			result := b.OrWhereNull(tt.column)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereNull() to return the same builder instance")
 		})
@@ -702,25 +1606,37 @@ func TestBuilder_WhereNotNull(t *testing.T) {
 		initialWheres  []where
 		column         string
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single WHERE NOT NULL condition",
+			name:          "should add a single NOT NULL condition",
 			initialWheres: []where{},
 			column:        "deleted_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NOT NULL", conj: "AND", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "deleted_at", operator: "IS NOT NULL", args: []any{}},
 			},
 		},
 		{
-			name: "should add a second WHERE NOT NULL condition with AND",
+			name: "should add a second NOT NULL condition with AND",
 			initialWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "email_verified_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryNull, column: "email_verified_at", operator: "IS NOT NULL", conj: "AND", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "email_verified_at", operator: "IS NOT NULL", args: []any{}},
 			},
+		},
+		{
+			name: "should return an error for NOT NULL condition when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -735,6 +1651,11 @@ func TestBuilder_WhereNotNull(t *testing.T) {
 			result := b.WhereNotNull(tt.column)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereNotNull() to return the same builder instance")
 		})
@@ -749,25 +1670,37 @@ func TestBuilder_OrWhereNotNull(t *testing.T) {
 		initialWheres  []where
 		column         string
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE NOT NULL condition",
+			name:          "should add a single OR NOT NULL condition",
 			initialWheres: []where{},
 			column:        "deleted_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NOT NULL", conj: "OR", args: []any{}},
+				{queryType: QueryNull, conj: "OR", column: "deleted_at", operator: "IS NOT NULL", args: []any{}},
 			},
 		},
 		{
-			name: "should add a second OR WHERE NOT NULL condition after an AND",
+			name: "should add a second OR NOT NULL condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column: "email_verified_at",
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryNull, column: "email_verified_at", operator: "IS NOT NULL", conj: "OR", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryNull, conj: "OR", column: "email_verified_at", operator: "IS NOT NULL", args: []any{}},
 			},
+		},
+		{
+			name: "should return an error for OR NOT NULL condition when column is empty",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			column: "",
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -782,6 +1715,11 @@ func TestBuilder_OrWhereNotNull(t *testing.T) {
 			result := b.OrWhereNotNull(tt.column)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereNotNull() to return the same builder instance")
 		})
@@ -797,26 +1735,27 @@ func TestBuilder_WhereRaw(t *testing.T) {
 		expression     string
 		args           []any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single WHERE RAW condition",
+			name:          "should add a single RAW condition",
 			initialWheres: []where{},
 			expression:    "id = ? AND name = ?",
 			args:          []any{1, "John"},
 			expectedWheres: []where{
-				{queryType: QueryRaw, expr: "id = ? AND name = ?", conj: "AND", args: []any{1, "John"}},
+				{queryType: QueryRaw, conj: "AND", expr: "id = ? AND name = ?", args: []any{1, "John"}},
 			},
 		},
 		{
-			name: "should add a second WHERE RAW condition with AND",
+			name: "should add a second RAW condition with AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+				{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"active"}},
 			},
-			expression: "created_at > NOW() - INTERVAL '1 day'",
-			args:       []any{},
+			expression: "created_at > ? - INTERVAL '1 day'",
+			args:       []any{"2025-09-25"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
-				{queryType: QueryRaw, expr: "created_at > NOW() - INTERVAL '1 day'", conj: "AND", args: []any{}},
+				{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"active"}},
+				{queryType: QueryRaw, conj: "AND", expr: "created_at > ? - INTERVAL '1 day'", args: []any{"2025-09-25"}},
 			},
 		},
 		{
@@ -825,8 +1764,16 @@ func TestBuilder_WhereRaw(t *testing.T) {
 			expression:    "column_a = column_b",
 			args:          []any{},
 			expectedWheres: []where{
-				{queryType: QueryRaw, expr: "column_a = column_b", conj: "AND", args: []any{}},
+				{queryType: QueryRaw, conj: "AND", expr: "column_a = column_b", args: []any{}},
 			},
+		},
+		{
+			name:           "should return an error for RAW when expression is empty",
+			initialWheres:  []where{},
+			expression:     "",
+			args:           []any{1, "John"},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyExpression,
 		},
 	}
 
@@ -841,6 +1788,11 @@ func TestBuilder_WhereRaw(t *testing.T) {
 			result := b.WhereRaw(tt.expression, tt.args...)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereRaw() to return the same builder instance")
 		})
@@ -856,26 +1808,27 @@ func TestBuilder_OrWhereRaw(t *testing.T) {
 		expression     string
 		args           []any
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE RAW condition",
+			name:          "should add a single OR RAW condition",
 			initialWheres: []where{},
 			expression:    "id = ? OR name = ?",
 			args:          []any{1, "John"},
 			expectedWheres: []where{
-				{queryType: QueryRaw, expr: "id = ? OR name = ?", conj: "OR", args: []any{1, "John"}},
+				{queryType: QueryRaw, conj: "OR", expr: "id = ? OR name = ?", args: []any{1, "John"}},
 			},
 		},
 		{
 			name: "should add a second OR WHERE RAW condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+				{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"active"}},
 			},
-			expression: "created_at < NOW() - INTERVAL '1 month'",
-			args:       []any{},
+			expression: "created_at < ? - INTERVAL '1 month'",
+			args:       []any{"2025-09-25"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
-				{queryType: QueryRaw, expr: "created_at < NOW() - INTERVAL '1 month'", conj: "OR", args: []any{}},
+				{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"active"}},
+				{queryType: QueryRaw, conj: "OR", expr: "created_at < ? - INTERVAL '1 month'", args: []any{"2025-09-25"}},
 			},
 		},
 		{
@@ -884,8 +1837,16 @@ func TestBuilder_OrWhereRaw(t *testing.T) {
 			expression:    "column_c != column_d",
 			args:          []any{},
 			expectedWheres: []where{
-				{queryType: QueryRaw, expr: "column_c != column_d", conj: "OR", args: []any{}},
+				{queryType: QueryRaw, conj: "OR", expr: "column_c != column_d", args: []any{}},
 			},
+		},
+		{
+			name:           "should return an error for OR RAW when expression is empty",
+			initialWheres:  []where{},
+			expression:     "",
+			args:           []any{1, "John"},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyExpression,
 		},
 	}
 
@@ -900,6 +1861,11 @@ func TestBuilder_OrWhereRaw(t *testing.T) {
 			result := b.OrWhereRaw(tt.expression, tt.args...)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereRaw() to return the same builder instance")
 		})
@@ -914,9 +1880,10 @@ func TestBuilder_WhereGroup(t *testing.T) {
 		initialWheres  []where
 		groupFn        func(QueryBuilder)
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single WHERE group condition",
+			name:          "should add a single Group condition",
 			initialWheres: []where{},
 			groupFn: func(qb QueryBuilder) {
 				qb.Where("status", "=", "active").OrWhere("status", "=", "pending")
@@ -926,56 +1893,56 @@ func TestBuilder_WhereGroup(t *testing.T) {
 					queryType: QueryNested,
 					conj:      "AND",
 					nested: []where{
-						{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
-						{queryType: QueryBasic, column: "status", operator: "=", conj: "OR", args: []any{"pending"}},
+						{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"active"}},
+						{queryType: QueryBasic, conj: "OR", column: "status", operator: "=", args: []any{"pending"}},
 					},
 				},
 			},
 		},
 		{
-			name: "should add a WHERE group condition after an existing WHERE",
+			name: "should add a Group condition after an existing WHERE",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			groupFn: func(qb QueryBuilder) {
 				qb.Where("age", ">", 18).Where("age", "<", 65)
 			},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 				{
 					queryType: QueryNested,
 					conj:      "AND",
 					nested: []where{
-						{queryType: QueryBasic, column: "age", operator: ">", conj: "AND", args: []any{18}},
-						{queryType: QueryBasic, column: "age", operator: "<", conj: "AND", args: []any{65}},
+						{queryType: QueryBasic, conj: "AND", column: "age", operator: ">", args: []any{18}},
+						{queryType: QueryBasic, conj: "AND", column: "age", operator: "<", args: []any{65}},
 					},
 				},
 			},
 		},
 		{
-			name: "should add a nested WHERE group with raw and basic conditions",
+			name: "should add a nested Group with raw and basic conditions",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+				{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"active"}},
 			},
 			groupFn: func(qb QueryBuilder) {
 				qb.WhereRaw("amount > ?", 100).OrWhere("currency", "=", "USD")
 			},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+				{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"active"}},
 				{
 					queryType: QueryNested,
 					conj:      "AND",
 					nested: []where{
-						{queryType: QueryRaw, expr: "amount > ?", conj: "AND", args: []any{100}},
-						{queryType: QueryBasic, column: "currency", operator: "=", conj: "OR", args: []any{"USD"}},
+						{queryType: QueryRaw, conj: "AND", expr: "amount > ?", args: []any{100}},
+						{queryType: QueryBasic, conj: "OR", column: "currency", operator: "=", args: []any{"USD"}},
 					},
 				},
 			},
 		},
 		{
-			name: "should add a deeply nested WHERE group with multiple AND or OR conditions",
+			name: "should add a deeply nested Group with multiple AND or OR conditions",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "user_id", operator: "=", conj: "AND", args: []any{123}},
+				{queryType: QueryBasic, conj: "AND", column: "user_id", operator: "=", args: []any{123}},
 			},
 			groupFn: func(qb QueryBuilder) {
 				qb.
@@ -988,21 +1955,21 @@ func TestBuilder_WhereGroup(t *testing.T) {
 					WhereIn("region", []any{"north", "east"})
 			},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "user_id", operator: "=", conj: "AND", args: []any{123}},
+				{queryType: QueryBasic, conj: "AND", column: "user_id", operator: "=", args: []any{123}},
 				{
 					queryType: QueryNested,
 					conj:      "AND",
 					nested: []where{
-						{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+						{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"active"}},
 						{
 							queryType: QueryNested,
 							conj:      "OR",
 							nested: []where{
-								{queryType: QueryBasic, column: "category", operator: "=", conj: "AND", args: []any{"premium"}},
-								{queryType: QueryRaw, expr: "price > ?", conj: "AND", args: []any{100}},
+								{queryType: QueryBasic, conj: "AND", column: "category", operator: "=", args: []any{"premium"}},
+								{queryType: QueryRaw, conj: "AND", expr: "price > ?", args: []any{100}},
 							},
 						},
-						{queryType: QueryBasic, column: "region", operator: "IN", conj: "AND", args: []any{[]any{"north", "east"}}},
+						{queryType: QueryIn, conj: "AND", column: "region", operator: "IN", args: []any{"north", "east"}},
 					},
 				},
 			},
@@ -1014,6 +1981,20 @@ func TestBuilder_WhereGroup(t *testing.T) {
 				// Do nothing
 			},
 			expectedWheres: []where{},
+		},
+		{
+			name:          "should return an error when Group func is nil",
+			groupFn:       nil,
+			expectedError: ErrNilFunc,
+		},
+		{
+			name:          "should return an error when Group func adds an error to its builder",
+			initialWheres: []where{},
+			groupFn: func(qb QueryBuilder) {
+				qb.WhereIn("", 1, 2) // This will cause an error
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyColumn,
 		},
 	}
 
@@ -1028,6 +2009,11 @@ func TestBuilder_WhereGroup(t *testing.T) {
 			result := b.WhereGroup(tt.groupFn)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected WhereGroup() to return the same builder instance")
 		})
@@ -1042,9 +2028,10 @@ func TestBuilder_OrWhereGroup(t *testing.T) {
 		initialWheres  []where
 		groupFn        func(QueryBuilder)
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE group condition",
+			name:          "should add a single OR Group condition",
 			initialWheres: []where{},
 			groupFn: func(qb QueryBuilder) {
 				qb.Where("status", "=", "active").Where("status", "=", "pending")
@@ -1054,36 +2041,36 @@ func TestBuilder_OrWhereGroup(t *testing.T) {
 					queryType: QueryNested,
 					conj:      "OR",
 					nested: []where{
-						{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
-						{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"pending"}},
+						{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"active"}},
+						{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"pending"}},
 					},
 				},
 			},
 		},
 		{
-			name: "should add an OR WHERE group condition after an existing WHERE",
+			name: "should add an OR Group condition after an existing WHERE",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			groupFn: func(qb QueryBuilder) {
 				qb.Where("age", ">", 18).OrWhere("age", "<", 10)
 			},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 				{
 					queryType: QueryNested,
 					conj:      "OR",
 					nested: []where{
-						{queryType: QueryBasic, column: "age", operator: ">", conj: "AND", args: []any{18}},
-						{queryType: QueryBasic, column: "age", operator: "<", conj: "OR", args: []any{10}},
+						{queryType: QueryBasic, conj: "AND", column: "age", operator: ">", args: []any{18}},
+						{queryType: QueryBasic, conj: "OR", column: "age", operator: "<", args: []any{10}},
 					},
 				},
 			},
 		},
 		{
-			name: "should add a deeply nested OR WHERE group with multiple AND or OR conditions",
+			name: "should add a deeply nested OR Group with multiple AND or OR conditions",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "user_id", operator: "=", conj: "AND", args: []any{123}},
+				{queryType: QueryBasic, conj: "AND", column: "user_id", operator: "=", args: []any{123}},
 			},
 			groupFn: func(qb QueryBuilder) {
 				qb.
@@ -1096,21 +2083,21 @@ func TestBuilder_OrWhereGroup(t *testing.T) {
 					OrWhereIn("region", []any{"south", "west"})
 			},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "user_id", operator: "=", conj: "AND", args: []any{123}},
+				{queryType: QueryBasic, conj: "AND", column: "user_id", operator: "=", args: []any{123}},
 				{
 					queryType: QueryNested,
 					conj:      "OR",
 					nested: []where{
-						{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"inactive"}},
+						{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"inactive"}},
 						{
 							queryType: QueryNested,
 							conj:      "OR",
 							nested: []where{
-								{queryType: QueryBasic, column: "category", operator: "=", conj: "AND", args: []any{"basic"}},
-								{queryType: QueryRaw, expr: "price < ?", conj: "OR", args: []any{50}},
+								{queryType: QueryBasic, conj: "AND", column: "category", operator: "=", args: []any{"basic"}},
+								{queryType: QueryRaw, conj: "OR", expr: "price < ?", args: []any{50}},
 							},
 						},
-						{queryType: QueryBasic, column: "region", operator: "IN", conj: "OR", args: []any{[]any{"south", "west"}}},
+						{queryType: QueryIn, conj: "OR", column: "region", operator: "IN", args: []any{"south", "west"}},
 					},
 				},
 			},
@@ -1122,6 +2109,20 @@ func TestBuilder_OrWhereGroup(t *testing.T) {
 				// Do nothing
 			},
 			expectedWheres: []where{},
+		},
+		{
+			name:          "should return an error when Group func is nil",
+			groupFn:       nil,
+			expectedError: ErrNilFunc,
+		},
+		{
+			name:          "should return an error when Group func adds an error to its builder",
+			initialWheres: []where{},
+			groupFn: func(qb QueryBuilder) {
+				qb.WhereIn("", 1, 2) // This will cause an error
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyColumn,
 		},
 	}
 
@@ -1136,6 +2137,11 @@ func TestBuilder_OrWhereGroup(t *testing.T) {
 			result := b.OrWhereGroup(tt.groupFn)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhereGroup() to return the same builder instance")
 		})
@@ -1152,9 +2158,10 @@ func TestBuilder_WhereSub(t *testing.T) {
 		operator       string
 		subFn          func(QueryBuilder)
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single WHERE subquery condition",
+			name:          "should add a single Subquery condition",
 			initialWheres: []where{},
 			column:        "user_id",
 			operator:      "IN",
@@ -1164,17 +2171,17 @@ func TestBuilder_WhereSub(t *testing.T) {
 			expectedWheres: []where{
 				{
 					queryType: QuerySub,
+					conj:      "AND",
 					column:    "user_id",
 					operator:  "IN",
-					conj:      "AND",
 					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "active"),
 				},
 			},
 		},
 		{
-			name: "should add a second WHERE subquery condition with AND",
+			name: "should add a second Subquery condition with AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column:   "product_id",
 			operator: "NOT IN",
@@ -1182,33 +2189,35 @@ func TestBuilder_WhereSub(t *testing.T) {
 				qb.Select("id").From("products").Where("stock", "<", 10)
 			},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 				{
 					queryType: QuerySub,
+					conj:      "AND",
 					column:    "product_id",
 					operator:  "NOT IN",
-					conj:      "AND",
 					sub:       New(PostgresDialect{}).Select("id").From("products").Where("stock", "<", 10),
 				},
 			},
 		},
 		{
-			name:          "should handle subquery with no conditions",
+			name:           "should return an error when subFn is nil",
+			initialWheres:  []where{},
+			column:         "user_id",
+			operator:       "IN",
+			subFn:          nil,
+			expectedWheres: []where{},
+			expectedError:  ErrNilFunc,
+		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
 			initialWheres: []where{},
-			column:        "category_id",
-			operator:      "=",
+			column:        "user_id",
+			operator:      "IN",
 			subFn: func(qb QueryBuilder) {
-				qb.Select("id").From("categories")
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
 			},
-			expectedWheres: []where{
-				{
-					queryType: QuerySub,
-					column:    "category_id",
-					operator:  "=",
-					conj:      "AND",
-					sub:       New(PostgresDialect{}).Select("id").From("categories"),
-				},
-			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
 		},
 	}
 
@@ -1226,6 +2235,11 @@ func TestBuilder_WhereSub(t *testing.T) {
 			result := b.WhereSub(tt.column, tt.operator, tt.subFn)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			// We need to compare the sub-builders separately as direct comparison of interfaces fails
 			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
 			if len(tt.expectedWheres) > 0 {
@@ -1262,9 +2276,10 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 		operator       string
 		subFn          func(QueryBuilder)
 		expectedWheres []where
+		expectedError  error
 	}{
 		{
-			name:          "should add a single OR WHERE subquery condition",
+			name:          "should add a single OR Subquery condition",
 			initialWheres: []where{},
 			column:        "user_id",
 			operator:      "IN",
@@ -1274,17 +2289,17 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 			expectedWheres: []where{
 				{
 					queryType: QuerySub,
+					conj:      "OR",
 					column:    "user_id",
 					operator:  "IN",
-					conj:      "OR",
 					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "inactive"),
 				},
 			},
 		},
 		{
-			name: "should add a second OR WHERE subquery condition after an AND",
+			name: "should add a second OR Subquery condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column:   "product_id",
 			operator: "NOT IN",
@@ -1292,32 +2307,35 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 				qb.Select("id").From("products").Where("stock", ">", 50)
 			},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 				{
 					queryType: QuerySub,
+					conj:      "OR",
 					column:    "product_id",
 					operator:  "NOT IN",
-					conj:      "OR",
 					sub:       New(PostgresDialect{}).Select("id").From("products").Where("stock", ">", 50),
 				},
 			},
 		},
 		{
-			name:     "should handle subquery with no conditions with OR",
-			column:   "category_id",
-			operator: "=",
+			name:           "should return an error when subFn is nil",
+			initialWheres:  []where{},
+			column:         "user_id",
+			operator:       "IN",
+			subFn:          nil,
+			expectedWheres: []where{},
+			expectedError:  ErrNilFunc,
+		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
+			initialWheres: []where{},
+			column:        "user_id",
+			operator:      "IN",
 			subFn: func(qb QueryBuilder) {
-				qb.Select("id").From("categories")
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
 			},
-			expectedWheres: []where{
-				{
-					queryType: QuerySub,
-					column:    "category_id",
-					operator:  "=",
-					conj:      "OR",
-					sub:       New(PostgresDialect{}).Select("id").From("categories"),
-				},
-			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
 		},
 	}
 
@@ -1332,6 +2350,11 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 			result := b.OrWhereSub(tt.column, tt.operator, tt.subFn)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			// We need to compare the sub-builders separately as direct comparison of interfaces fails
 			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
 
@@ -1355,6 +2378,442 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 			}
 
 			assert.Equal(t, b, result, "expected OrWhereSub() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_WhereExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		subFn          func(QueryBuilder)
+		expectedWheres []where
+		expectedError  error
+	}{
+		{
+			name:          "should add a single WHERE EXISTS condition",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").
+					From("users").
+					Where("status", "=", "active")
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					conj:      "AND",
+					column:    "",
+					operator:  "EXISTS",
+					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "active"),
+				},
+			},
+		},
+		{
+			name: "should add a second WHERE EXISTS condition with AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").
+					From("orders").
+					Where("user_id", "=", 1)
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{
+					queryType: QuerySub,
+					conj:      "AND",
+					column:    "",
+					operator:  "EXISTS",
+					sub:       New(PostgresDialect{}).Select("id").From("orders").Where("user_id", "=", 1),
+				},
+			},
+		},
+		{
+			name:           "should return an error when subFn is nil",
+			initialWheres:  []where{},
+			subFn:          nil,
+			expectedWheres: []where{},
+			expectedError:  ErrNilFunc,
+		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				wheres:  tt.initialWheres,
+			}
+
+			// Act
+			result := b.WhereExists(tt.subFn)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
+			// We need to compare the sub-builders separately as direct comparison of interfaces fails
+			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
+			if len(tt.expectedWheres) > 0 {
+				for i, expectedWhere := range tt.expectedWheres {
+					actualWhere := b.wheres[i]
+					assert.Equal(t, expectedWhere.queryType, actualWhere.queryType, "expected query type to match")
+					assert.Equal(t, expectedWhere.column, actualWhere.column, "expected column to match")
+					assert.Equal(t, expectedWhere.operator, actualWhere.operator, "expected operator to match")
+					assert.Equal(t, expectedWhere.conj, actualWhere.conj, "expected conj to match")
+					assert.Equal(t, expectedWhere.args, actualWhere.args, "expected args to match")
+
+					if expectedWhere.queryType == QuerySub {
+						expectedSubBuilder := expectedWhere.sub.(*builder)
+						actualSubBuilder := actualWhere.sub.(*builder)
+						assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "expected table to match")
+						assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "expected columns to match")
+						assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "expected wheres to match")
+					}
+				}
+			}
+
+			assert.Equal(t, b, result, "expected WhereExists() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		subFn          func(QueryBuilder)
+		expectedWheres []where
+		expectedError  error
+	}{
+		{
+			name:          "should add a single OR WHERE EXISTS condition",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").
+					From("users").
+					Where("status", "=", "inactive")
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					conj:      "OR",
+					column:    "",
+					operator:  "EXISTS",
+					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "inactive"),
+				},
+			},
+		},
+		{
+			name: "should add a second OR WHERE EXISTS condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").
+					From("orders").
+					Where("user_id", "=", 2)
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{
+					queryType: QuerySub,
+					conj:      "OR",
+					column:    "",
+					operator:  "EXISTS",
+					sub:       New(PostgresDialect{}).Select("id").From("orders").Where("user_id", "=", 2),
+				},
+			},
+		},
+		{
+			name:           "should return an error when subFn is nil",
+			initialWheres:  []where{},
+			subFn:          nil,
+			expectedWheres: []where{},
+			expectedError:  ErrNilFunc,
+		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres, dialect: PostgresDialect{}}
+
+			// Act
+			result := b.OrWhereExists(tt.subFn)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
+			// We need to compare the sub-builders separately as direct comparison of interfaces fails
+			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
+
+			if len(tt.expectedWheres) > 0 {
+				for i, expectedWhere := range tt.expectedWheres {
+					actualWhere := b.wheres[i]
+					assert.Equal(t, expectedWhere.queryType, actualWhere.queryType, "expected QueryType to match")
+					assert.Equal(t, expectedWhere.column, actualWhere.column, "expected column to match")
+					assert.Equal(t, expectedWhere.operator, actualWhere.operator, "expected operator to match")
+					assert.Equal(t, expectedWhere.conj, actualWhere.conj, "expected conj to match")
+					assert.Equal(t, expectedWhere.args, actualWhere.args, "expected args to match")
+
+					if expectedWhere.queryType == QuerySub {
+						expectedSubBuilder := expectedWhere.sub.(*builder)
+						actualSubBuilder := actualWhere.sub.(*builder)
+						assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "expected table to match")
+						assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "expected columns to match")
+						assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "expected wheres to match")
+					}
+				}
+			}
+
+			assert.Equal(t, b, result, "expected OrWhereExists() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_WhereNotExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		subFn          func(QueryBuilder)
+		expectedWheres []where
+		expectedError  error
+	}{
+		{
+			name:          "should add a single WHERE NOT EXISTS condition",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("users").Where("status", "=", "active")
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					conj:      "AND",
+					column:    "",
+					operator:  "NOT EXISTS",
+					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "active"),
+				},
+			},
+		},
+		{
+			name: "should add a second WHERE NOT EXISTS condition with AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("orders").Where("user_id", "=", 1)
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{
+					queryType: QuerySub,
+					conj:      "AND",
+					column:    "",
+					operator:  "NOT EXISTS",
+					sub:       New(PostgresDialect{}).Select("id").From("orders").Where("user_id", "=", 1),
+				},
+			},
+		},
+		{
+			name:           "should return an error when subFn is nil",
+			initialWheres:  []where{},
+			subFn:          nil,
+			expectedWheres: []where{},
+			expectedError:  ErrNilFunc,
+		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				wheres:  tt.initialWheres,
+			}
+
+			// Act
+			result := b.WhereNotExists(tt.subFn)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
+			// We need to compare the sub-builders separately as direct comparison of interfaces fails
+			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
+			if len(tt.expectedWheres) > 0 {
+				for i, expectedWhere := range tt.expectedWheres {
+					actualWhere := b.wheres[i]
+					assert.Equal(t, expectedWhere.queryType, actualWhere.queryType, "expected query type to match")
+					assert.Equal(t, expectedWhere.column, actualWhere.column, "expected column to match")
+					assert.Equal(t, expectedWhere.operator, actualWhere.operator, "expected operator to match")
+					assert.Equal(t, expectedWhere.conj, actualWhere.conj, "expected conj to match")
+					assert.Equal(t, expectedWhere.args, actualWhere.args, "expected args to match")
+
+					if expectedWhere.queryType == QuerySub {
+						expectedSubBuilder := expectedWhere.sub.(*builder)
+						actualSubBuilder := actualWhere.sub.(*builder)
+						assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "expected table to match")
+						assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "expected columns to match")
+						assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "expected wheres to match")
+					}
+				}
+			}
+
+			assert.Equal(t, b, result, "expected WhereNotExists() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_OrWhereNotExists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		initialWheres  []where
+		subFn          func(QueryBuilder)
+		expectedWheres []where
+		expectedError  error
+	}{
+		{
+			name:          "should add a single OR WHERE NOT EXISTS condition",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("users").Where("status", "=", "inactive")
+			},
+			expectedWheres: []where{
+				{
+					queryType: QuerySub,
+					conj:      "OR",
+					column:    "",
+					operator:  "NOT EXISTS",
+					sub:       New(PostgresDialect{}).Select("id").From("users").Where("status", "=", "inactive"),
+				},
+			},
+		},
+		{
+			name: "should add a second OR WHERE NOT EXISTS condition after an AND",
+			initialWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+			},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("orders").Where("user_id", "=", 2)
+			},
+			expectedWheres: []where{
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{
+					queryType: QuerySub,
+					conj:      "OR",
+					column:    "",
+					operator:  "NOT EXISTS",
+					sub:       New(PostgresDialect{}).Select("id").From("orders").Where("user_id", "=", 2),
+				},
+			},
+		},
+		{
+			name:           "should return an error when subFn is nil",
+			initialWheres:  []where{},
+			subFn:          nil,
+			expectedWheres: []where{},
+			expectedError:  ErrNilFunc,
+		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{wheres: tt.initialWheres, dialect: PostgresDialect{}}
+
+			// Act
+			result := b.OrWhereNotExists(tt.subFn)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
+			// We need to compare the sub-builders separately as direct comparison of interfaces fails
+			assert.Equal(t, len(tt.expectedWheres), len(b.wheres), "expected number of wheres to match")
+
+			if len(tt.expectedWheres) > 0 {
+				for i, expectedWhere := range tt.expectedWheres {
+					actualWhere := b.wheres[i]
+					assert.Equal(t, expectedWhere.queryType, actualWhere.queryType, "expected QueryType to match")
+					assert.Equal(t, expectedWhere.column, actualWhere.column, "expected column to match")
+					assert.Equal(t, expectedWhere.operator, actualWhere.operator, "expected operator to match")
+					assert.Equal(t, expectedWhere.conj, actualWhere.conj, "expected conj to match")
+					assert.Equal(t, expectedWhere.args, actualWhere.args, "expected args to match")
+
+					if expectedWhere.queryType == QuerySub {
+						expectedSubBuilder := expectedWhere.sub.(*builder)
+						actualSubBuilder := actualWhere.sub.(*builder)
+						assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "expected table to match")
+						assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "expected columns to match")
+						assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "expected wheres to match")
+					}
+				}
+			}
+
+			assert.Equal(t, b, result, "expected OrWhereNotExists() to return the same builder instance")
 		})
 	}
 }
@@ -1584,5 +3043,49 @@ func BenchmarkBuilder_OrWhereSub(b *testing.B) {
 
 	for b.Loop() {
 		builder.OrWhereSub(column, operator, subFn)
+	}
+}
+
+func BenchmarkBuilder_WhereExists(b *testing.B) {
+	builder := &builder{dialect: PostgresDialect{}}
+	subFn := func(qb QueryBuilder) {
+		qb.Select("id").From("users").Where("status", "=", "active")
+	}
+
+	for b.Loop() {
+		builder.WhereExists(subFn)
+	}
+}
+
+func BenchmarkBuilder_OrWhereExists(b *testing.B) {
+	builder := &builder{dialect: PostgresDialect{}}
+	subFn := func(qb QueryBuilder) {
+		qb.Select("id").From("orders").Where("user_id", "=", 1)
+	}
+
+	for b.Loop() {
+		builder.OrWhereExists(subFn)
+	}
+}
+
+func BenchmarkBuilder_WhereNotExists(b *testing.B) {
+	builder := &builder{dialect: PostgresDialect{}}
+	subFn := func(qb QueryBuilder) {
+		qb.Select("id").From("products").Where("stock", "<", 5)
+	}
+
+	for b.Loop() {
+		builder.WhereNotExists(subFn)
+	}
+}
+
+func BenchmarkBuilder_OrWhereNotExists(b *testing.B) {
+	builder := &builder{dialect: PostgresDialect{}}
+	subFn := func(qb QueryBuilder) {
+		qb.Select("id").From("categories").Where("is_active", "=", false)
+	}
+
+	for b.Loop() {
+		builder.OrWhereNotExists(subFn)
 	}
 }

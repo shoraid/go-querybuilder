@@ -14,7 +14,7 @@ func TestBuilder_ToSQL(t *testing.T) {
 		builder       builder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should return select SQL when action is select",
@@ -22,11 +22,11 @@ func TestBuilder_ToSQL(t *testing.T) {
 				dialect: PostgresDialect{},
 				action:  "select",
 				table:   "users",
+				limit:   -1,
+				offset:  -1,
 				wheres: []where{
 					{queryType: QueryBasic, column: "id", operator: "=", args: []any{1}},
 				},
-				limit:  -1,
-				offset: -1,
 			},
 			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1`,
 			expectedArgs: []any{1},
@@ -38,7 +38,7 @@ func TestBuilder_ToSQL(t *testing.T) {
 				action:  "update", // unsupported
 				table:   "users",
 			},
-			expectedError: "unsupported action: update",
+			expectedError: ErrUnsupportedAction,
 		},
 		{
 			name: "should return error when dialect is nil",
@@ -47,7 +47,60 @@ func TestBuilder_ToSQL(t *testing.T) {
 				action:  "select",
 				table:   "users",
 			},
-			expectedError: "no dialect specified for builder",
+			expectedError: ErrNoDialect,
+		},
+		{
+			name: "should return error when nested where has an error",
+			builder: builder{
+				dialect: PostgresDialect{},
+				action:  "select",
+				table:   "users",
+				limit:   -1,
+				offset:  -1,
+				wheres: []where{
+					{
+						queryType: QueryNested,
+						conj:      "AND",
+						nested: []where{
+							{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"active"}},
+							{
+								queryType: QuerySub, conj: "AND", column: "", operator: "EXISTS", args: []any{}, sub: &builder{
+									dialect: PostgresDialect{},
+									action:  "select",
+									table:   "orders",
+									limit:   -1,
+									offset:  -1,
+									err:     ErrEmptyColumn, // pre-existing error
+									wheres: []where{
+										{queryType: QueryIn, column: "", operator: "IN", args: []any{1, 2, 3}}, // This will cause ErrEmptyColumn
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedError: ErrEmptyColumn,
+		},
+		{
+			name: "should return error from builder if present",
+			builder: builder{
+				dialect: PostgresDialect{},
+				action:  "select",
+				wheres: []where{
+					{
+						queryType: QuerySub, column: "", operator: "EXISTS", args: []any{}, sub: &builder{
+							dialect: PostgresDialect{},
+							action:  "select",
+							table:   "", // This will cause ErrEmptyTable
+							limit:   -1,
+							offset:  -1,
+							err:     ErrEmptyTable, // pre-existing error
+						},
+					},
+				},
+			},
+			expectedError: ErrEmptyTable,
 		},
 	}
 
@@ -57,11 +110,9 @@ func TestBuilder_ToSQL(t *testing.T) {
 
 			sql, args, err := tt.builder.ToSQL()
 
-			if tt.expectedError != "" {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.expectedError)
-				assert.Empty(t, sql)
-				assert.Empty(t, args)
+			if tt.expectedError != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error message to match")
 				return
 			}
 
