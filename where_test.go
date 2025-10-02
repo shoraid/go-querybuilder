@@ -16,7 +16,11 @@ func TestBuilder_Where(t *testing.T) {
 		operator       string
 		values         []any
 		expectedWheres []where
+		expectedError  error
 	}{
+		// -------------------------------------------
+		// --------------- Where Basic ---------------
+		// -------------------------------------------
 		{
 			name:          "should add a single WHERE condition",
 			initialWheres: []where{},
@@ -24,119 +28,30 @@ func TestBuilder_Where(t *testing.T) {
 			operator:      "=",
 			values:        []any{1},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 		},
 		{
 			name: "should add a second WHERE condition with AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column:   "name",
 			operator: "=",
 			values:   []any{"John"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBasic, column: "name", operator: "=", conj: "AND", args: []any{"John"}},
-			},
-		},
-		{
-			name:     "should default to AND when conjunction is missing",
-			column:   "status",
-			operator: "=",
-			values:   []any{"active"},
-			expectedWheres: []where{
-				{queryType: QueryBasic, column: "status", operator: "=", conj: "AND", args: []any{"active"}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "name", operator: "=", args: []any{"John"}},
 			},
 		},
 		{
 			name:          "should handle different operators",
 			initialWheres: []where{},
-			column:        "age",
-			operator:      ">",
-			values:        []any{18},
+			column:        "email",
+			operator:      "LIKE",
+			values:        []any{"%example%"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "age", operator: ">", conj: "AND", args: []any{18}},
-			},
-		},
-		{
-			name:          "should handle IN operator",
-			initialWheres: []where{},
-			column:        "category",
-			operator:      "IN",
-			values:        []any{"A", "B"},
-			expectedWheres: []where{
-				{queryType: QueryIn, column: "category", operator: "IN", conj: "AND", args: []any{"A", "B"}},
-			},
-		},
-		{
-			name:          "should handle NOT IN operator",
-			initialWheres: []where{},
-			column:        "order_id",
-			operator:      "NOT IN",
-			values:        []any{1, 2, 3},
-			expectedWheres: []where{
-				{queryType: QueryIn, column: "order_id", operator: "NOT IN", conj: "AND", args: []any{1, 2, 3}},
-			},
-		},
-		{
-			name:          "should handle IS NULL operator",
-			initialWheres: []where{},
-			column:        "deleted_at",
-			operator:      "IS NULL",
-			values:        []any{},
-			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NULL", conj: "AND", args: []any{}},
-			},
-		},
-		{
-			name:          "should handle IS NOT NULL operator",
-			initialWheres: []where{},
-			column:        "updated_at",
-			operator:      "IS NOT NULL",
-			values:        []any{},
-			expectedWheres: []where{
-				{queryType: QueryNull, column: "updated_at", operator: "IS NOT NULL", conj: "AND", args: []any{}},
-			},
-		},
-		{
-			name:          "should handle BETWEEN operator",
-			initialWheres: []where{},
-			column:        "age",
-			operator:      "BETWEEN",
-			values:        []any{18, 30},
-			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "AND", args: []any{18, 30}},
-			},
-		},
-		{
-			name:          "should handle BETWEEN operator with slice",
-			initialWheres: []where{},
-			column:        "quantity",
-			operator:      "BETWEEN",
-			values:        []any{[]int{50, 100}},
-			expectedWheres: []where{
-				{queryType: QueryBetween, column: "quantity", operator: "BETWEEN", conj: "AND", args: []any{50, 100}},
-			},
-		},
-		{
-			name:          "should handle NOT BETWEEN operator",
-			initialWheres: []where{},
-			column:        "price",
-			operator:      "NOT BETWEEN",
-			values:        []any{100, 200},
-			expectedWheres: []where{
-				{queryType: QueryBetween, column: "price", operator: "NOT BETWEEN", conj: "AND", args: []any{100, 200}},
-			},
-		},
-		{
-			name:          "should handle NOT BETWEEN operator with slice",
-			initialWheres: []where{},
-			column:        "quantity",
-			operator:      "NOT BETWEEN",
-			values:        []any{[]int{50, 100}},
-			expectedWheres: []where{
-				{queryType: QueryBetween, column: "quantity", operator: "NOT BETWEEN", conj: "AND", args: []any{50, 100}},
+				{queryType: QueryBasic, conj: "AND", column: "email", operator: "LIKE", args: []any{"%example%"}},
 			},
 		},
 		{
@@ -146,7 +61,7 @@ func TestBuilder_Where(t *testing.T) {
 			operator:      "=",
 			values:        []any{},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{}},
 			},
 		},
 		{
@@ -156,7 +71,69 @@ func TestBuilder_Where(t *testing.T) {
 			operator:      "=",
 			values:        nil,
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// ---------------- Where In -----------------
+		// -------------------------------------------
+		{
+			name:          "should handle IN operator with multiple values",
+			initialWheres: []where{},
+			column:        "category",
+			operator:      "IN",
+			values:        []any{"A", "B"},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "AND", column: "category", operator: "IN", args: []any{"A", "B"}},
+			},
+		},
+		{
+			name:          "should handle IN operator with mixed slices",
+			initialWheres: []where{},
+			column:        "category",
+			operator:      "IN",
+			values:        []any{[]int{1, 2}, []string{"A", "B"}},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "AND", column: "category", operator: "IN", args: []any{1, 2, "A", "B"}},
+			},
+		},
+
+		// -------------------------------------------
+		// -------------- Where Not In ---------------
+		// -------------------------------------------
+		{
+			name:          "should handle NOT IN operator with multiple values",
+			initialWheres: []where{},
+			column:        "order_id",
+			operator:      "NOT IN",
+			values:        []any{1, 2, 3},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "AND", column: "order_id", operator: "NOT IN", args: []any{1, 2, 3}},
+			},
+		},
+		{
+			name:          "should handle NOT IN operator with mixed slices",
+			initialWheres: []where{},
+			column:        "order_id",
+			operator:      "NOT IN",
+			values:        []any{[]int{1, 2}, []string{"A", "B"}},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "AND", column: "order_id", operator: "NOT IN", args: []any{1, 2, "A", "B"}},
+			},
+		},
+
+		// -------------------------------------------
+		// --------------- Where Null ----------------
+		// -------------------------------------------
+		{
+			name:          "should handle IS NULL operator",
+			initialWheres: []where{},
+			column:        "deleted_at",
+			operator:      "IS NULL",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "AND", column: "deleted_at", operator: "IS NULL", args: []any{}},
 			},
 		},
 		{
@@ -166,7 +143,21 @@ func TestBuilder_Where(t *testing.T) {
 			operator:      "IS NULL",
 			values:        []any{1, 2, 3}, // These should be ignored
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NULL", conj: "AND", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "deleted_at", operator: "IS NULL", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// ------------- Where Not Null --------------
+		// -------------------------------------------
+		{
+			name:          "should handle IS NOT NULL operator",
+			initialWheres: []where{},
+			column:        "updated_at",
+			operator:      "IS NOT NULL",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "AND", column: "updated_at", operator: "IS NOT NULL", args: []any{}},
 			},
 		},
 		{
@@ -176,80 +167,152 @@ func TestBuilder_Where(t *testing.T) {
 			operator:      "IS NOT NULL",
 			values:        []any{1, 2, 3}, // These should be ignored
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "updated_at", operator: "IS NOT NULL", conj: "AND", args: []any{}},
+				{queryType: QueryNull, conj: "AND", column: "updated_at", operator: "IS NOT NULL", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// -------------- Where Between --------------
+		// -------------------------------------------
+		{
+			name:          "should handle BETWEEN operator with two scalar values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18, 30},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle nil values for BETWEEN operator",
-			column:   "age",
-			operator: "BETWEEN",
-			values:   nil,
+			name:          "should handle BETWEEN operator with a slice of two values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, 30}},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "AND", args: []any{nil, nil}},
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle empty values slice for BETWEEN operator",
-			column:   "age",
-			operator: "BETWEEN",
-			values:   []any{},
+			name:          "should handle BETWEEN operator with too many values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18, 30, 40},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "AND", args: []any{nil, nil}},
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle single value for BETWEEN operator",
-			column:   "age",
-			operator: "BETWEEN",
-			values:   []any{10},
+			name:          "should handle BETWEEN operator with a slice of incorrect length",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, 30, 40}},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "AND", args: []any{10, nil}},
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle more than 2 values for BETWEEN operator (values are ignored)",
-			column:   "age",
-			operator: "BETWEEN",
-			values:   []any{10, 18, 25},
+			name:          "should return an error for BETWEEN with nil values",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{nil, 30},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for BETWEEN with a slice containing nil",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, nil}},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for BETWEEN with too few values",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for BETWEEN with a slice single value",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]int{18}},
+			expectedError: ErrNilNotAllowed,
+		},
+
+		// -------------------------------------------
+		// ------------ Where Not Between ------------
+		// -------------------------------------------
+		{
+			name:          "should handle NOT BETWEEN operator with two scalar values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{18, 30},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "AND", args: []any{nil, nil}},
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle nil values for NOT BETWEEN operator",
-			column:   "age",
-			operator: "NOT BETWEEN",
-			values:   nil,
+			name:          "should handle NOT BETWEEN operator with a slice of two values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, 30}},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "AND", args: []any{nil, nil}},
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle empty values slice for NOT BETWEEN operator",
-			column:   "age",
-			operator: "NOT BETWEEN",
-			values:   []any{},
+			name:          "should handle NOT BETWEEN operator with too many values",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{18, 30, 40},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "AND", args: []any{nil, nil}},
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle single value slice for NOT BETWEEN operator",
-			column:   "age",
-			operator: "NOT BETWEEN",
-			values:   []any{10},
+			name:          "should handle NOT BETWEEN operator with a slice of incorrect length",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, 30, 40}},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "AND", args: []any{10, nil}},
+				{queryType: QueryBetween, conj: "AND", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle more than 2 values slice for NOT BETWEEN operator (values are ignored)",
-			column:   "age",
-			operator: "NOT BETWEEN",
-			values:   []any{10, 18, 25},
-			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "AND", args: []any{nil, nil}},
-			},
+			name:          "should return an error for NOT BETWEEN with nil values",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{nil, 30},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for NOT BETWEEN with a slice containing nil",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, nil}},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for NOT BETWEEN with too few values",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{18},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for NOT BETWEEN with a slice single value",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]int{18}},
+			expectedError: ErrNilNotAllowed,
 		},
 	}
 
@@ -264,6 +327,11 @@ func TestBuilder_Where(t *testing.T) {
 			result := b.Where(tt.column, tt.operator, tt.values...)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected Where() to return the same builder instance")
 		})
@@ -280,7 +348,11 @@ func TestBuilder_OrWhere(t *testing.T) {
 		operator       string
 		values         []any
 		expectedWheres []where
+		expectedError  error
 	}{
+		// -------------------------------------------
+		// --------------- OrWhere Basic -------------
+		// -------------------------------------------
 		{
 			name:          "should add a single OR WHERE condition",
 			initialWheres: []where{},
@@ -288,97 +360,41 @@ func TestBuilder_OrWhere(t *testing.T) {
 			operator:      "=",
 			values:        []any{1},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "OR", args: []any{1}},
+				{queryType: QueryBasic, conj: "OR", column: "id", operator: "=", args: []any{1}},
 			},
 		},
 		{
 			name: "should add a second OR WHERE condition after an AND",
 			initialWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
 			},
 			column:   "name",
 			operator: "=",
 			values:   []any{"John"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "AND", args: []any{1}},
-				{queryType: QueryBasic, column: "name", operator: "=", conj: "OR", args: []any{"John"}},
+				{queryType: QueryBasic, conj: "AND", column: "id", operator: "=", args: []any{1}},
+				{queryType: QueryBasic, conj: "OR", column: "name", operator: "=", args: []any{"John"}},
 			},
 		},
 		{
 			name:          "should handle different operators with OR",
 			initialWheres: []where{},
-			column:        "age",
-			operator:      ">",
-			values:        []any{18},
+			column:        "email",
+			operator:      "LIKE",
+			values:        []any{"%example%"},
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "age", operator: ">", conj: "OR", args: []any{18}},
+				{queryType: QueryBasic, conj: "OR", column: "email", operator: "LIKE", args: []any{"%example%"}},
 			},
 		},
 		{
-			name:          "should handle IN operator with OR",
+			name:          "should handle empty values slice for basic operator with OR",
 			initialWheres: []where{},
-			column:        "category",
-			operator:      "IN",
-			values:        []any{"A", "B"},
-			expectedWheres: []where{
-				{queryType: QueryIn, column: "category", operator: "IN", conj: "OR", args: []any{"A", "B"}},
-			},
-		},
-		{
-			name:           "should handle NOT IN operator with OR",
-			initialWheres:  []where{},
-			column:         "order_id",
-			operator:       "NOT IN",
-			values:         []any{1, 2, 3},
-			expectedWheres: []where{{queryType: QueryIn, column: "order_id", operator: "NOT IN", conj: "OR", args: []any{1, 2, 3}}},
-		},
-		{
-			name:          "should handle IS NULL operator with OR",
-			initialWheres: []where{},
-			column:        "deleted_at",
-			operator:      "IS NULL",
+			column:        "id",
+			operator:      "=",
 			values:        []any{},
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NULL", conj: "OR", args: []any{}},
+				{queryType: QueryBasic, conj: "OR", column: "id", operator: "=", args: []any{}},
 			},
-		},
-		{
-			name:          "should handle IS NOT NULL operator with OR",
-			initialWheres: []where{},
-			column:        "updated_at",
-			operator:      "IS NOT NULL",
-			values:        []any{},
-			expectedWheres: []where{
-				{queryType: QueryNull, column: "updated_at", operator: "IS NOT NULL", conj: "OR", args: []any{}},
-			},
-		},
-		{
-			name:          "should handle BETWEEN operator with OR",
-			initialWheres: []where{},
-			column:        "age",
-			operator:      "BETWEEN",
-			values:        []any{18, 30},
-			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "OR", args: []any{18, 30}},
-			},
-		},
-		{
-			name:          "should handle NOT BETWEEN operator with OR",
-			initialWheres: []where{},
-			column:        "price",
-			operator:      "NOT BETWEEN",
-			values:        []any{100, 200},
-			expectedWheres: []where{
-				{queryType: QueryBetween, column: "price", operator: "NOT BETWEEN", conj: "OR", args: []any{100, 200}},
-			},
-		},
-		{
-			name:           "should handle empty values slice for basic operator with OR",
-			initialWheres:  []where{},
-			column:         "id",
-			operator:       "=",
-			values:         []any{},
-			expectedWheres: []where{{queryType: QueryBasic, column: "id", operator: "=", conj: "OR", args: []any{}}},
 		},
 		{
 			name:          "should handle nil values for basic operator with OR",
@@ -387,7 +403,69 @@ func TestBuilder_OrWhere(t *testing.T) {
 			operator:      "=",
 			values:        nil,
 			expectedWheres: []where{
-				{queryType: QueryBasic, column: "id", operator: "=", conj: "OR", args: []any{}},
+				{queryType: QueryBasic, conj: "OR", column: "id", operator: "=", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// --------------- OrWhere In ----------------
+		// -------------------------------------------
+		{
+			name:          "should handle IN operator with multiple values with OR",
+			initialWheres: []where{},
+			column:        "category",
+			operator:      "IN",
+			values:        []any{"A", "B"},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "OR", column: "category", operator: "IN", args: []any{"A", "B"}},
+			},
+		},
+		{
+			name:          "should handle IN operator with mixed slices with OR",
+			initialWheres: []where{},
+			column:        "category",
+			operator:      "IN",
+			values:        []any{[]int{1, 2}, []string{"A", "B"}},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "OR", column: "category", operator: "IN", args: []any{1, 2, "A", "B"}},
+			},
+		},
+
+		// -------------------------------------------
+		// ------------- OrWhere Not In --------------
+		// -------------------------------------------
+		{
+			name:          "should handle NOT IN operator with multiple values with OR",
+			initialWheres: []where{},
+			column:        "order_id",
+			operator:      "NOT IN",
+			values:        []any{1, 2, 3},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "OR", column: "order_id", operator: "NOT IN", args: []any{1, 2, 3}},
+			},
+		},
+		{
+			name:          "should handle NOT IN operator with mixed slices with OR",
+			initialWheres: []where{},
+			column:        "order_id",
+			operator:      "NOT IN",
+			values:        []any{[]int{1, 2}, []string{"A", "B"}},
+			expectedWheres: []where{
+				{queryType: QueryIn, conj: "OR", column: "order_id", operator: "NOT IN", args: []any{1, 2, "A", "B"}},
+			},
+		},
+
+		// -------------------------------------------
+		// -------------- OrWhere Null ---------------
+		// -------------------------------------------
+		{
+			name:          "should handle IS NULL operator with OR",
+			initialWheres: []where{},
+			column:        "deleted_at",
+			operator:      "IS NULL",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "OR", column: "deleted_at", operator: "IS NULL", args: []any{}},
 			},
 		},
 		{
@@ -397,7 +475,21 @@ func TestBuilder_OrWhere(t *testing.T) {
 			operator:      "IS NULL",
 			values:        []any{1, 2, 3}, // These should be ignored
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "deleted_at", operator: "IS NULL", conj: "OR", args: []any{}},
+				{queryType: QueryNull, conj: "OR", column: "deleted_at", operator: "IS NULL", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// ------------ OrWhere Not Null -------------
+		// -------------------------------------------
+		{
+			name:          "should handle IS NOT NULL operator with OR",
+			initialWheres: []where{},
+			column:        "updated_at",
+			operator:      "IS NOT NULL",
+			values:        []any{},
+			expectedWheres: []where{
+				{queryType: QueryNull, conj: "OR", column: "updated_at", operator: "IS NOT NULL", args: []any{}},
 			},
 		},
 		{
@@ -407,80 +499,142 @@ func TestBuilder_OrWhere(t *testing.T) {
 			operator:      "IS NOT NULL",
 			values:        []any{1, 2, 3}, // These should be ignored
 			expectedWheres: []where{
-				{queryType: QueryNull, column: "updated_at", operator: "IS NOT NULL", conj: "OR", args: []any{}},
+				{queryType: QueryNull, conj: "OR", column: "updated_at", operator: "IS NOT NULL", args: []any{}},
+			},
+		},
+
+		// -------------------------------------------
+		// ------------ OrWhere Between --------------
+		// -------------------------------------------
+		{
+			name:          "should handle BETWEEN operator with two scalar values with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18, 30},
+			expectedWheres: []where{
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle nil values for BETWEEN operator with OR",
-			column:   "age",
-			operator: "BETWEEN",
-			values:   nil,
+			name:          "should handle BETWEEN operator with a slice of two values with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, 30}},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "OR", args: []any{nil, nil}},
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle empty values slice for BETWEEN operator with OR",
-			column:   "age",
-			operator: "BETWEEN",
-			values:   []any{},
+			name:          "should handle BETWEEN operator with too many values with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18, 30, 40},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "OR", args: []any{nil, nil}},
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle single value slice for BETWEEN operator with OR",
-			column:   "age",
-			operator: "BETWEEN",
-			values:   []any{10},
+			name:          "should handle BETWEEN operator with a slice of incorrect length with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, 30, 40}},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "OR", args: []any{10, nil}},
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle more than 2 values slice for BETWEEN operator with OR (values are ignored)",
-			column:   "age",
-			operator: "BETWEEN",
-			values:   []any{10, 18, 25},
+			name:          "should return an error for OR BETWEEN with nil values",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{nil, 30},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR BETWEEN with a slice containing nil",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]any{18, nil}},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR BETWEEN with too few values",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{18},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR BETWEEN with a slice single value",
+			column:        "age",
+			operator:      "BETWEEN",
+			values:        []any{[]int{18}},
+			expectedError: ErrNilNotAllowed,
+		},
+
+		// -------------------------------------------
+		// ---------- OrWhere Not Between ------------
+		// -------------------------------------------
+		{
+			name:          "should handle NOT BETWEEN operator with two scalar values with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{18, 30},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "BETWEEN", conj: "OR", args: []any{nil, nil}},
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle nil values for NOT BETWEEN operator with OR",
-			column:   "age",
-			operator: "NOT BETWEEN",
-			values:   nil,
+			name:          "should handle NOT BETWEEN operator with a slice of two values with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, 30}},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "OR", args: []any{nil, nil}},
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle empty values slice for NOT BETWEEN operator with OR",
-			column:   "age",
-			operator: "NOT BETWEEN",
-			values:   []any{},
+			name:          "should handle NOT BETWEEN operator with a slice of incorrect length with OR",
+			initialWheres: []where{},
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, 30, 40}},
 			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "OR", args: []any{nil, nil}},
+				{queryType: QueryBetween, conj: "OR", column: "age", operator: "NOT BETWEEN", args: []any{18, 30}},
 			},
 		},
 		{
-			name:     "should handle single value slice for NOT BETWEEN operator with OR",
-			column:   "age",
-			operator: "NOT BETWEEN",
-			values:   []any{10},
-			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "OR", args: []any{10, nil}},
-			},
+			name:          "should return an error for OR NOT BETWEEN with nil values",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{nil, 30},
+			expectedError: ErrNilNotAllowed,
 		},
 		{
-			name:     "should handle more than 2 values slice for NOT BETWEEN operator with OR (values are ignored)",
-			column:   "age",
-			operator: "NOT BETWEEN",
-			values:   []any{10, 18, 25},
-			expectedWheres: []where{
-				{queryType: QueryBetween, column: "age", operator: "NOT BETWEEN", conj: "OR", args: []any{nil, nil}},
-			},
+			name:          "should return an error for OR NOT BETWEEN with a slice containing nil",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]any{18, nil}},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR NOT BETWEEN with too few values",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{18},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name:          "should return an error for OR NOT BETWEEN with a slice single value",
+			column:        "age",
+			operator:      "NOT BETWEEN",
+			values:        []any{[]int{18}},
+			expectedError: ErrNilNotAllowed,
 		},
 	}
 
@@ -495,6 +649,11 @@ func TestBuilder_OrWhere(t *testing.T) {
 			result := b.OrWhere(tt.column, tt.operator, tt.values...)
 
 			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+			}
+
 			assert.Equal(t, tt.expectedWheres, b.wheres, "expected wheres to be updated correctly")
 			assert.Equal(t, b, result, "expected OrWhere() to return the same builder instance")
 		})
@@ -555,7 +714,7 @@ func TestBuilder_WhereBetween(t *testing.T) {
 			from:           nil,
 			to:             30,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 		{
 			name:           "should return an error for BETWEEN with nil 'to' value",
@@ -563,7 +722,7 @@ func TestBuilder_WhereBetween(t *testing.T) {
 			from:           18,
 			to:             nil,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 		{
 			name:           "should return an error for BETWEEN with both 'from' and 'to' nil",
@@ -571,7 +730,7 @@ func TestBuilder_WhereBetween(t *testing.T) {
 			from:           nil,
 			to:             nil,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 	}
 
@@ -651,7 +810,7 @@ func TestBuilder_OrWhereBetween(t *testing.T) {
 			from:           nil,
 			to:             30,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 		{
 			name:           "should return an error for OR BETWEEN with nil 'to' value",
@@ -659,7 +818,7 @@ func TestBuilder_OrWhereBetween(t *testing.T) {
 			from:           18,
 			to:             nil,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 		{
 			name:           "should return an error for OR BETWEEN with both 'from' and 'to' nil",
@@ -667,7 +826,7 @@ func TestBuilder_OrWhereBetween(t *testing.T) {
 			from:           nil,
 			to:             nil,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 	}
 
@@ -747,7 +906,7 @@ func TestBuilder_WhereNotBetween(t *testing.T) {
 			from:           nil,
 			to:             30,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 		{
 			name:           "should return an error for NOT BETWEEN with nil 'to' value",
@@ -755,7 +914,7 @@ func TestBuilder_WhereNotBetween(t *testing.T) {
 			from:           18,
 			to:             nil,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 		{
 			name:           "should return an error for NOT BETWEEN with both 'from' and 'to' nil",
@@ -763,7 +922,7 @@ func TestBuilder_WhereNotBetween(t *testing.T) {
 			from:           nil,
 			to:             nil,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 	}
 
@@ -843,7 +1002,7 @@ func TestBuilder_OrWhereNotBetween(t *testing.T) {
 			from:           nil,
 			to:             30,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 		{
 			name:           "should return an error for OR NOT BETWEEN with nil 'to' value",
@@ -851,7 +1010,7 @@ func TestBuilder_OrWhereNotBetween(t *testing.T) {
 			from:           18,
 			to:             nil,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 		{
 			name:           "should return an error for OR NOT BETWEEN with both 'from' and 'to' nil",
@@ -859,7 +1018,7 @@ func TestBuilder_OrWhereNotBetween(t *testing.T) {
 			from:           nil,
 			to:             nil,
 			expectedWheres: nil,
-			expectedError:  ErrBetweenNilBounds,
+			expectedError:  ErrNilNotAllowed,
 		},
 	}
 

@@ -23,23 +23,15 @@ func (b *builder) addWhere(conj, column, operator string, values ...any) {
 	case "BETWEEN", "NOT BETWEEN":
 		var from, to any
 
-		// Handle slice values: []int{a,b}, []string{a,b}, etc.
-		if len(values) == 1 {
+		if len(values) >= 2 {
+			from, to = values[0], values[1]
+		} else if len(values) == 1 {
 			rv := reflect.ValueOf(values[0])
 			if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
 				if rv.Len() >= 2 {
-					from = rv.Index(0).Interface()
-					to = rv.Index(1).Interface()
-				} else if rv.Len() == 1 {
-					from = rv.Index(0).Interface()
+					from, to = rv.Index(0).Interface(), rv.Index(1).Interface()
 				}
-			} else {
-				// Single non-slice value
-				from = values[0]
 			}
-		} else if len(values) == 2 {
-			from = values[0]
-			to = values[1]
 		}
 
 		b.addWhereBetween(conj, column, operator, from, to)
@@ -89,7 +81,7 @@ func (b *builder) addWhereBetween(conj, column, operator string, from, to any) {
 	}
 
 	if from == nil || to == nil {
-		b.addErr(ErrBetweenNilBounds)
+		b.addErr(ErrNilNotAllowed)
 		return
 	}
 
