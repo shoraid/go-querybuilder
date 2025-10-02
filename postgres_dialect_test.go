@@ -326,7 +326,7 @@ func TestPostgresDialect_CompileSelect_Select(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build select all query when columns are empty",
@@ -387,7 +387,7 @@ func TestPostgresDialect_CompileSelect_Select(t *testing.T) {
 			},
 			expectedSQL:   "",
 			expectedArgs:  []any{},
-			expectedError: "no table specified",
+			expectedError: ErrEmptyTable,
 		},
 	}
 
@@ -407,9 +407,9 @@ func TestPostgresDialect_CompileSelect_Select(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -838,8 +838,11 @@ func TestPostgresDialect_Where(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
+		// -------------------------------------------
+		// --------------- Where Basic ---------------
+		// -------------------------------------------
 		{
 			name: "should build query with a single basic WHERE clause",
 			build: func(b *builder) QueryBuilder {
@@ -857,45 +860,108 @@ func TestPostgresDialect_Where(t *testing.T) {
 				return b.
 					Select().
 					From("users").
-					Where("id", "=", 1).
-					Where("name", "=", "John")
+					Where("status", "=", "active").
+					Where("email", "LIKE", "%example.com%")
 			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 AND "name" = $2`,
-			expectedArgs: []any{1, "John"},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 AND "email" LIKE $2`,
+			expectedArgs: []any{"active", "%example.com%"},
 		},
+
+		// -------------------------------------------
+		// -------------- Where Between --------------
+		// -------------------------------------------
 		{
-			name: "should build query with different operator",
+			name: "should build query with BETWEEN operator and multiple values",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("products").
-					Where("price", ">", 100)
+					Where("price", "BETWEEN", 10, 50)
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1`,
-			expectedArgs: []any{100},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" BETWEEN $1 AND $2)`,
+			expectedArgs: []any{10, 50},
 		},
 		{
-			name: "should build query with LIKE operator",
+			name: "should build query with BETWEEN operator and a slice",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("products").
-					Where("name", "LIKE", "%apple%")
+					Where("price", "BETWEEN", []int{10, 50})
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "name" LIKE $1`,
-			expectedArgs: []any{"%apple%"},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" BETWEEN $1 AND $2)`,
+			expectedArgs: []any{10, 50},
 		},
 		{
-			name: "should build query with NOT LIKE operator",
+			name: "should error when BETWEEN operator has a nil 'from' value",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("products").
-					Where("name", "NOT LIKE", "%apple%")
+					Where("price", "BETWEEN", nil, 100)
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "name" NOT LIKE $1`,
-			expectedArgs: []any{"%apple%"},
+			expectedError: ErrNilNotAllowed,
 		},
+		{
+			name: "should error when BETWEEN operator has a nil 'to' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "BETWEEN", 50, nil)
+			},
+			expectedError: ErrNilNotAllowed,
+		},
+
+		// -------------------------------------------
+		// ------------ Where Not Between ------------
+		// -------------------------------------------
+		{
+			name: "should build query with NOT BETWEEN operator and multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "NOT BETWEEN", 10, 50)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" NOT BETWEEN $1 AND $2)`,
+			expectedArgs: []any{10, 50},
+		},
+		{
+			name: "should build query with NOT BETWEEN operator and a slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "NOT BETWEEN", []int{10, 50})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE ("price" NOT BETWEEN $1 AND $2)`,
+			expectedArgs: []any{10, 50},
+		},
+		{
+			name: "should error when NOT BETWEEN operator has a nil 'from' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "NOT BETWEEN", nil, 100)
+			},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name: "should error when NOT BETWEEN operator has a nil 'to' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "NOT BETWEEN", 50, nil)
+			},
+			expectedError: ErrNilNotAllowed,
+		},
+
+		// -------------------------------------------
+		// ---------------- Where In -----------------
+		// -------------------------------------------
 		{
 			name: "should build query with IN operator and a single value",
 			build: func(b *builder) QueryBuilder {
@@ -940,6 +1006,10 @@ func TestPostgresDialect_Where(t *testing.T) {
 			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" IN ($1, $2, $3, $4, $5, $6)`,
 			expectedArgs: []any{1, 2, 3, "a", "b", "c"},
 		},
+
+		// -------------------------------------------
+		// -------------- Where Not In ---------------
+		// -------------------------------------------
 		{
 			name: "should build query with NOT IN operator and a single value",
 			build: func(b *builder) QueryBuilder {
@@ -984,50 +1054,10 @@ func TestPostgresDialect_Where(t *testing.T) {
 			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" NOT IN ($1, $2, $3, $4, $5, $6)`,
 			expectedArgs: []any{1, 2, 3, "a", "b", "c"},
 		},
-		{
-			name: "should build query with BETWEEN operator and multiple values",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "BETWEEN", 10, 50)
-			},
-			expectedSQL:  `SELECT * FROM "products" WHERE ("price" BETWEEN $1 AND $2)`,
-			expectedArgs: []any{10, 50},
-		},
-		{
-			name: "should build query with BETWEEN operator and a slice",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "BETWEEN", []int{10, 50})
-			},
-			expectedSQL:  `SELECT * FROM "products" WHERE ("price" BETWEEN $1 AND $2)`,
-			expectedArgs: []any{10, 50},
-		},
-		{
-			name: "should build query with NOT BETWEEN operator and multiple values",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "NOT BETWEEN", 10, 50)
-			},
-			expectedSQL:  `SELECT * FROM "products" WHERE ("price" NOT BETWEEN $1 AND $2)`,
-			expectedArgs: []any{10, 50},
-		},
-		{
-			name: "should build query with NOT BETWEEN operator and a slice",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "NOT BETWEEN", []int{10, 50})
-			},
-			expectedSQL:  `SELECT * FROM "products" WHERE ("price" NOT BETWEEN $1 AND $2)`,
-			expectedArgs: []any{10, 50},
-		},
+
+		// -------------------------------------------
+		// --------------- Where Null ----------------
+		// -------------------------------------------
 		{
 			name: "should build query with IS NULL operator",
 			build: func(b *builder) QueryBuilder {
@@ -1050,6 +1080,10 @@ func TestPostgresDialect_Where(t *testing.T) {
 			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NULL`,
 			expectedArgs: []any{},
 		},
+
+		// -------------------------------------------
+		// ------------- Where Not Null --------------
+		// -------------------------------------------
 		{
 			name: "should build query with IS NOT NULL operator",
 			build: func(b *builder) QueryBuilder {
@@ -1072,46 +1106,6 @@ func TestPostgresDialect_Where(t *testing.T) {
 			expectedSQL:  `SELECT * FROM "users" WHERE "email" IS NOT NULL`,
 			expectedArgs: []any{},
 		},
-		{
-			name: "should error when BETWEEN operator has a nil 'from' value",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "BETWEEN", nil, 100)
-			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
-		},
-		{
-			name: "should error when BETWEEN operator has a nil 'to' value",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "BETWEEN", 50, nil)
-			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
-		},
-		{
-			name: "should error when NOT BETWEEN operator has a nil 'from' value",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "NOT BETWEEN", nil, 100)
-			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
-		},
-		{
-			name: "should error when NOT BETWEEN operator has a nil 'to' value",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "NOT BETWEEN", 50, nil)
-			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
-		},
 	}
 
 	for _, tt := range tests {
@@ -1130,9 +1124,9 @@ func TestPostgresDialect_Where(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -1153,8 +1147,11 @@ func TestPostgresDialect_OrWhere(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
+		// -------------------------------------------
+		// ------------- Or Where Basic --------------
+		// -------------------------------------------
 		{
 			name: "should build query with a single OR WHERE clause",
 			build: func(b *builder) QueryBuilder {
@@ -1173,12 +1170,12 @@ func TestPostgresDialect_OrWhere(t *testing.T) {
 				return b.
 					Select().
 					From("users").
-					Where("id", "=", 1).
+					Where("status", "=", "active").
 					OrWhere("name", "=", "John").
 					OrWhere("email", "LIKE", "%example.com%")
 			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 OR "name" = $2 OR "email" LIKE $3`,
-			expectedArgs: []any{1, "John", "%example.com%"},
+			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR "name" = $2 OR "email" LIKE $3`,
+			expectedArgs: []any{"active", "John", "%example.com%"},
 		},
 		{
 			name: "should treat leading OrWhere as first WHERE clause",
@@ -1191,30 +1188,110 @@ func TestPostgresDialect_OrWhere(t *testing.T) {
 			expectedSQL:  `SELECT * FROM "users" WHERE "name" = $1`,
 			expectedArgs: []any{"John"},
 		},
+
+		// -------------------------------------------
+		// ------------ Or Where Between -------------
+		// -------------------------------------------
 		{
-			name: "should build query with OR LIKE operator",
+			name: "should build query with OR BETWEEN operator and multiple values",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("products").
-					Where("price", ">", 100).
-					OrWhere("name", "LIKE", "%apple%")
+					Where("price", "<", 10).
+					OrWhere("price", "BETWEEN", 10, 50)
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "name" LIKE $2`,
-			expectedArgs: []any{100, "%apple%"},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" BETWEEN $2 AND $3)`,
+			expectedArgs: []any{10, 10, 50},
 		},
 		{
-			name: "should build query with OR NOT LIKE operator",
+			name: "should build query with OR BETWEEN operator and a slice",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("products").
-					Where("price", ">", 100).
-					OrWhere("name", "NOT LIKE", "%apple%")
+					Where("price", "<", 10).
+					OrWhere("price", "BETWEEN", []int{10, 50})
 			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "name" NOT LIKE $2`,
-			expectedArgs: []any{100, "%apple%"},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" BETWEEN $2 AND $3)`,
+			expectedArgs: []any{10, 10, 50},
 		},
+		{
+			name: "should error when OR BETWEEN operator has a nil 'from' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("id", "=", 1).
+					OrWhere("price", "BETWEEN", nil, 100)
+			},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name: "should error when OR BETWEEN operator has a nil 'to' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("id", "=", 1).
+					OrWhere("price", "BETWEEN", 50, nil)
+			},
+			expectedError: ErrNilNotAllowed,
+		},
+
+		// -------------------------------------------
+		// ---------- Or Where Not Between -----------
+		// -------------------------------------------
+		{
+			name: "should build query with OR NOT BETWEEN operator and multiple values",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "<", 10).
+					OrWhere("price", "NOT BETWEEN", 10, 50)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" NOT BETWEEN $2 AND $3)`,
+			expectedArgs: []any{10, 10, 50},
+		},
+		{
+			name: "should build query with OR NOT BETWEEN operator and a slice",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("price", "<", 10).
+					OrWhere("price", "NOT BETWEEN", []int{10, 50})
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" NOT BETWEEN $2 AND $3)`,
+			expectedArgs: []any{10, 10, 50},
+		},
+		{
+			name: "should error when OR NOT BETWEEN operator has a nil 'from' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("id", "=", 1).
+					OrWhere("price", "NOT BETWEEN", nil, 100)
+			},
+			expectedError: ErrNilNotAllowed,
+		},
+		{
+			name: "should error when OR NOT BETWEEN operator has a nil 'to' value",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					Where("id", "=", 1).
+					OrWhere("price", "NOT BETWEEN", 50, nil)
+			},
+			expectedError: ErrNilNotAllowed,
+		},
+
+		// -------------------------------------------
+		// -------------- Or Where In ----------------
+		// -------------------------------------------
 		{
 			name: "should build query with OR IN operator and a single value",
 			build: func(b *builder) QueryBuilder {
@@ -1263,6 +1340,10 @@ func TestPostgresDialect_OrWhere(t *testing.T) {
 			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" NOT IN ($2, $3, $4, $5, $6, $7)`,
 			expectedArgs: []any{100, 1, 2, 3, "a", "b", "c"},
 		},
+
+		// -------------------------------------------
+		// ------------ Or Where Not In --------------
+		// -------------------------------------------
 		{
 			name: "should build query with OR NOT IN operator and a single value",
 			build: func(b *builder) QueryBuilder {
@@ -1311,54 +1392,10 @@ func TestPostgresDialect_OrWhere(t *testing.T) {
 			expectedSQL:  `SELECT * FROM "products" WHERE "price" > $1 OR "category_id" NOT IN ($2, $3, $4, $5, $6, $7)`,
 			expectedArgs: []any{100, 1, 2, 3, "a", "b", "c"},
 		},
-		{
-			name: "should build query with OR BETWEEN operator and multiple values",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "<", 10).
-					OrWhere("price", "BETWEEN", 10, 50)
-			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" BETWEEN $2 AND $3)`,
-			expectedArgs: []any{10, 10, 50},
-		},
-		{
-			name: "should build query with OR BETWEEN operator and a slice",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "<", 10).
-					OrWhere("price", "BETWEEN", []int{10, 50})
-			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" BETWEEN $2 AND $3)`,
-			expectedArgs: []any{10, 10, 50},
-		},
-		{
-			name: "should build query with OR NOT BETWEEN operator and multiple values",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "<", 10).
-					OrWhere("price", "NOT BETWEEN", 10, 50)
-			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" NOT BETWEEN $2 AND $3)`,
-			expectedArgs: []any{10, 10, 50},
-		},
-		{
-			name: "should build query with OR NOT BETWEEN operator and a slice",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("price", "<", 10).
-					OrWhere("price", "NOT BETWEEN", []int{10, 50})
-			},
-			expectedSQL:  `SELECT * FROM "products" WHERE "price" < $1 OR ("price" NOT BETWEEN $2 AND $3)`,
-			expectedArgs: []any{10, 10, 50},
-		},
+
+		// -------------------------------------------
+		// ------------- Or Where Null ---------------
+		// -------------------------------------------
 		{
 			name: "should build query with OR IS NULL operator",
 			build: func(b *builder) QueryBuilder {
@@ -1383,6 +1420,10 @@ func TestPostgresDialect_OrWhere(t *testing.T) {
 			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 OR "email" IS NULL`,
 			expectedArgs: []any{1},
 		},
+
+		// -------------------------------------------
+		// ----------- Or Where Not Null -------------
+		// -------------------------------------------
 		{
 			name: "should build query with OR IS NOT NULL operator",
 			build: func(b *builder) QueryBuilder {
@@ -1407,50 +1448,6 @@ func TestPostgresDialect_OrWhere(t *testing.T) {
 			expectedSQL:  `SELECT * FROM "users" WHERE "id" = $1 OR "email" IS NOT NULL`,
 			expectedArgs: []any{1},
 		},
-		{
-			name: "should error when OR BETWEEN operator has a nil 'from' value",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("id", "=", 1).
-					OrWhere("price", "BETWEEN", nil, 100)
-			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
-		},
-		{
-			name: "should error when OR BETWEEN operator has a nil 'to' value",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("id", "=", 1).
-					OrWhere("price", "BETWEEN", 50, nil)
-			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
-		},
-		{
-			name: "should error when OR NOT BETWEEN operator has a nil 'from' value",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("id", "=", 1).
-					OrWhere("price", "NOT BETWEEN", nil, 100)
-			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
-		},
-		{
-			name: "should error when OR NOT BETWEEN operator has a nil 'to' value",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("products").
-					Where("id", "=", 1).
-					OrWhere("price", "NOT BETWEEN", 50, nil)
-			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
-		},
 	}
 
 	for _, tt := range tests {
@@ -1469,9 +1466,9 @@ func TestPostgresDialect_OrWhere(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -1492,7 +1489,7 @@ func TestPostgresDialect_WhereBetween(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build single basic between clause",
@@ -1525,7 +1522,7 @@ func TestPostgresDialect_WhereBetween(t *testing.T) {
 					From("products").
 					WhereBetween("category_id", nil, 100)
 			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
 			name: "should return error when 'to' value is nil",
@@ -1535,7 +1532,7 @@ func TestPostgresDialect_WhereBetween(t *testing.T) {
 					From("products").
 					WhereBetween("category_id", 50, nil)
 			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
+			expectedError: ErrNilNotAllowed,
 		},
 	}
 
@@ -1555,9 +1552,9 @@ func TestPostgresDialect_WhereBetween(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -1578,7 +1575,7 @@ func TestPostgresDialect_OrWhereBetween(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build single OR between clause",
@@ -1624,7 +1621,7 @@ func TestPostgresDialect_OrWhereBetween(t *testing.T) {
 					From("products").
 					OrWhereBetween("", 10, 100)
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 		{
 			name: "should return error when 'from' value is nil",
@@ -1634,7 +1631,7 @@ func TestPostgresDialect_OrWhereBetween(t *testing.T) {
 					From("products").
 					OrWhereBetween("category_id", nil, 100)
 			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
 			name: "should return error when 'to' value is nil",
@@ -1644,7 +1641,7 @@ func TestPostgresDialect_OrWhereBetween(t *testing.T) {
 					From("products").
 					OrWhereBetween("category_id", 50, nil)
 			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
+			expectedError: ErrNilNotAllowed,
 		},
 	}
 
@@ -1664,9 +1661,9 @@ func TestPostgresDialect_OrWhereBetween(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -1687,7 +1684,7 @@ func TestPostgresDialect_WhereNotBetween(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build single basic not between clause",
@@ -1720,7 +1717,7 @@ func TestPostgresDialect_WhereNotBetween(t *testing.T) {
 					From("products").
 					WhereNotBetween("", 10, 100)
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 		{
 			name: "should return error when 'from' value is nil",
@@ -1730,7 +1727,7 @@ func TestPostgresDialect_WhereNotBetween(t *testing.T) {
 					From("products").
 					WhereNotBetween("category_id", nil, 100)
 			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
 			name: "should return error when 'to' value is nil",
@@ -1740,7 +1737,7 @@ func TestPostgresDialect_WhereNotBetween(t *testing.T) {
 					From("products").
 					WhereNotBetween("category_id", 50, nil)
 			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
+			expectedError: ErrNilNotAllowed,
 		},
 	}
 
@@ -1760,9 +1757,9 @@ func TestPostgresDialect_WhereNotBetween(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -1783,7 +1780,7 @@ func TestPostgresDialect_OrWhereNotBetween(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build single OR not between clause",
@@ -1829,7 +1826,7 @@ func TestPostgresDialect_OrWhereNotBetween(t *testing.T) {
 					From("products").
 					OrWhereNotBetween("", 10, 100)
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 		{
 			name: "should return error when 'from' value is nil",
@@ -1839,7 +1836,7 @@ func TestPostgresDialect_OrWhereNotBetween(t *testing.T) {
 					From("products").
 					OrWhereNotBetween("category_id", nil, 100)
 			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
 			name: "should return error when 'to' value is nil",
@@ -1849,7 +1846,7 @@ func TestPostgresDialect_OrWhereNotBetween(t *testing.T) {
 					From("products").
 					OrWhereNotBetween("category_id", 50, nil)
 			},
-			expectedError: "BETWEEN clause requires two non-nil values for column",
+			expectedError: ErrNilNotAllowed,
 		},
 	}
 
@@ -1869,9 +1866,9 @@ func TestPostgresDialect_OrWhereNotBetween(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -1892,10 +1889,10 @@ func TestPostgresDialect_WhereIn(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
-			name: "should build IN clause with single value on customers",
+			name: "should build IN clause with single value",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
@@ -1906,7 +1903,7 @@ func TestPostgresDialect_WhereIn(t *testing.T) {
 			expectedArgs: []any{1},
 		},
 		{
-			name: "should build IN clause with multiple values on orders",
+			name: "should build IN clause with multiple values",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
@@ -1929,7 +1926,7 @@ func TestPostgresDialect_WhereIn(t *testing.T) {
 			expectedArgs: []any{1, 2, "active", "pending"},
 		},
 		{
-			name: "should build IN clause from single slice on products",
+			name: "should build IN clause from single slice",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
@@ -1940,7 +1937,7 @@ func TestPostgresDialect_WhereIn(t *testing.T) {
 			expectedArgs: []any{11, 12, 13},
 		},
 		{
-			name: "should build IN clause from multiple slices on employees",
+			name: "should build IN clause from multiple slices",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
@@ -1951,7 +1948,7 @@ func TestPostgresDialect_WhereIn(t *testing.T) {
 			expectedArgs: []any{1, 2, "HR", "Finance"},
 		},
 		{
-			name: "should build IN clause from mixed values and slice on invoices",
+			name: "should build IN clause from mixed values and slice",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
@@ -1962,7 +1959,7 @@ func TestPostgresDialect_WhereIn(t *testing.T) {
 			expectedArgs: []any{"paid", "pending", "overdue"},
 		},
 		{
-			name: "should build IN clause with boolean values on accounts",
+			name: "should build IN clause with boolean values",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
@@ -1973,7 +1970,7 @@ func TestPostgresDialect_WhereIn(t *testing.T) {
 			expectedArgs: []any{true, false},
 		},
 		{
-			name: "should replace empty slice with 1=0 on shipments",
+			name: "should replace empty slice with 1=0",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
@@ -1985,17 +1982,17 @@ func TestPostgresDialect_WhereIn(t *testing.T) {
 			expectedArgs: []any{"DHL"},
 		},
 		{
-			name: "should return error when column name is empty on warehouses",
+			name: "should return error when column name is empty",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("warehouses").
 					WhereIn("", 1, 2)
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 		{
-			name: "should return error when nil is passed directly on products",
+			name: "should return error when nil is passed directly",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
@@ -2003,10 +2000,10 @@ func TestPostgresDialect_WhereIn(t *testing.T) {
 					Where("price", ">", 100).
 					WhereIn("status", nil, "active")
 			},
-			expectedError: "IN clause does not support nil, use IS NULL instead",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
-			name: "should return error when slice contains nil on customers",
+			name: "should return error when slice contains nil",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
@@ -2014,17 +2011,17 @@ func TestPostgresDialect_WhereIn(t *testing.T) {
 					Where("country", "=", "US").
 					WhereIn("segment", []any{"premium", nil})
 			},
-			expectedError: "IN clause contains nil value in slice, use IS NULL instead",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
-			name: "should return error when nested slice is passed on suppliers",
+			name: "should return error when nested slice is passed",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("suppliers").
 					WhereIn("id", [][]int{{1, 2}})
 			},
-			expectedError: "IN clause does not support nested slices",
+			expectedError: ErrNestedSlice,
 		},
 	}
 
@@ -2044,9 +2041,9 @@ func TestPostgresDialect_WhereIn(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -2067,7 +2064,7 @@ func TestPostgresDialect_OrWhereIn(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build OR IN clause with single value",
@@ -2167,6 +2164,17 @@ func TestPostgresDialect_OrWhereIn(t *testing.T) {
 			expectedArgs: []any{"DHL"},
 		},
 		{
+			name: "should treat leading OrWhereIn as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("customers").
+					OrWhereIn("id", 1)
+			},
+			expectedSQL:  `SELECT * FROM "customers" WHERE "id" IN ($1)`,
+			expectedArgs: []any{1},
+		},
+		{
 			name: "should return error when column name is empty in OR clause",
 			build: func(b *builder) QueryBuilder {
 				return b.
@@ -2175,7 +2183,7 @@ func TestPostgresDialect_OrWhereIn(t *testing.T) {
 					Where("location", "=", "NYC").
 					OrWhereIn("", 1, 2)
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 		{
 			name: "should return error when nil is passed directly in OR clause",
@@ -2186,7 +2194,7 @@ func TestPostgresDialect_OrWhereIn(t *testing.T) {
 					Where("price", ">", 100).
 					OrWhereIn("status", nil, "active")
 			},
-			expectedError: "IN clause does not support nil, use IS NULL instead",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
 			name: "should return error when slice contains nil in OR clause",
@@ -2197,7 +2205,7 @@ func TestPostgresDialect_OrWhereIn(t *testing.T) {
 					Where("country", "=", "US").
 					OrWhereIn("segment", []any{"premium", nil})
 			},
-			expectedError: "IN clause contains nil value in slice, use IS NULL instead",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
 			name: "should return error when nested slice is passed in OR clause",
@@ -2208,7 +2216,7 @@ func TestPostgresDialect_OrWhereIn(t *testing.T) {
 					Where("active", "=", true).
 					OrWhereIn("id", [][]int{{1, 2}})
 			},
-			expectedError: "IN clause does not support nested slices",
+			expectedError: ErrNestedSlice,
 		},
 	}
 
@@ -2228,9 +2236,9 @@ func TestPostgresDialect_OrWhereIn(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -2251,7 +2259,7 @@ func TestPostgresDialect_WhereNotIn(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build NOT IN clause with single value",
@@ -2351,7 +2359,7 @@ func TestPostgresDialect_WhereNotIn(t *testing.T) {
 					From("warehouses").
 					WhereNotIn("", 1, 2)
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 		{
 			name: "should return error when nil is passed directly",
@@ -2362,7 +2370,7 @@ func TestPostgresDialect_WhereNotIn(t *testing.T) {
 					Where("price", ">", 100).
 					WhereNotIn("status", nil, "active")
 			},
-			expectedError: "IN clause does not support nil, use IS NULL instead",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
 			name: "should return error when slice contains nil",
@@ -2373,7 +2381,7 @@ func TestPostgresDialect_WhereNotIn(t *testing.T) {
 					Where("country", "=", "US").
 					WhereNotIn("segment", []any{"premium", nil})
 			},
-			expectedError: "IN clause contains nil value in slice, use IS NULL instead",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
 			name: "should return error when nested slice is passed",
@@ -2383,7 +2391,7 @@ func TestPostgresDialect_WhereNotIn(t *testing.T) {
 					From("suppliers").
 					WhereNotIn("id", [][]int{{1, 2}})
 			},
-			expectedError: "IN clause does not support nested slices",
+			expectedError: ErrNestedSlice,
 		},
 	}
 
@@ -2403,9 +2411,9 @@ func TestPostgresDialect_WhereNotIn(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -2426,7 +2434,7 @@ func TestPostgresDialect_OrWhereNotIn(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build OR NOT IN clause with single value",
@@ -2526,6 +2534,17 @@ func TestPostgresDialect_OrWhereNotIn(t *testing.T) {
 			expectedArgs: []any{"DHL"},
 		},
 		{
+			name: "should treat leading OrWhereNotIn as first WHERE clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("products").
+					OrWhereNotIn("category_id", 1, 2)
+			},
+			expectedSQL:  `SELECT * FROM "products" WHERE "category_id" NOT IN ($1, $2)`,
+			expectedArgs: []any{1, 2},
+		},
+		{
 			name: "should return error when column name is empty in OR NOT IN clause",
 			build: func(b *builder) QueryBuilder {
 				return b.
@@ -2534,7 +2553,7 @@ func TestPostgresDialect_OrWhereNotIn(t *testing.T) {
 					Where("location", "=", "NYC").
 					OrWhereNotIn("", 1, 2)
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 		{
 			name: "should return error when nil is passed directly in OR NOT IN clause",
@@ -2545,7 +2564,7 @@ func TestPostgresDialect_OrWhereNotIn(t *testing.T) {
 					Where("price", ">", 100).
 					OrWhereNotIn("status", nil, "active")
 			},
-			expectedError: "IN clause does not support nil, use IS NULL instead",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
 			name: "should return error when slice contains nil in OR NOT IN clause",
@@ -2556,7 +2575,7 @@ func TestPostgresDialect_OrWhereNotIn(t *testing.T) {
 					Where("country", "=", "US").
 					OrWhereNotIn("segment", []any{"premium", nil})
 			},
-			expectedError: "IN clause contains nil value in slice, use IS NULL instead",
+			expectedError: ErrNilNotAllowed,
 		},
 		{
 			name: "should return error when nested slice is passed in OR NOT IN clause",
@@ -2567,7 +2586,7 @@ func TestPostgresDialect_OrWhereNotIn(t *testing.T) {
 					Where("active", "=", true).
 					OrWhereNotIn("id", [][]int{{1, 2}})
 			},
-			expectedError: "IN clause does not support nested slices",
+			expectedError: ErrNestedSlice,
 		},
 	}
 
@@ -2587,9 +2606,9 @@ func TestPostgresDialect_OrWhereNotIn(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -2610,7 +2629,7 @@ func TestPostgresDialect_WhereNull(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build single IS NULL clause",
@@ -2643,7 +2662,7 @@ func TestPostgresDialect_WhereNull(t *testing.T) {
 					From("users").
 					WhereNull("")
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -2663,9 +2682,9 @@ func TestPostgresDialect_WhereNull(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -2686,7 +2705,7 @@ func TestPostgresDialect_OrWhereNull(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build single OR IS NULL clause",
@@ -2732,7 +2751,7 @@ func TestPostgresDialect_OrWhereNull(t *testing.T) {
 					From("users").
 					OrWhereNull("")
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -2752,9 +2771,9 @@ func TestPostgresDialect_OrWhereNull(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -2775,7 +2794,7 @@ func TestPostgresDialect_WhereNotNull(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build single IS NOT NULL clause",
@@ -2808,7 +2827,7 @@ func TestPostgresDialect_WhereNotNull(t *testing.T) {
 					From("users").
 					WhereNotNull("")
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -2828,9 +2847,9 @@ func TestPostgresDialect_WhereNotNull(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -2851,7 +2870,7 @@ func TestPostgresDialect_OrWhereNotNull(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build single OR IS NOT NULL clause",
@@ -2897,7 +2916,7 @@ func TestPostgresDialect_OrWhereNotNull(t *testing.T) {
 					From("users").
 					OrWhereNotNull("")
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -2917,9 +2936,9 @@ func TestPostgresDialect_OrWhereNotNull(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -2940,7 +2959,7 @@ func TestPostgresDialect_WhereRaw(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build raw where clause without args",
@@ -2952,17 +2971,6 @@ func TestPostgresDialect_WhereRaw(t *testing.T) {
 			},
 			expectedSQL:  `SELECT * FROM "users" WHERE id = 1`,
 			expectedArgs: []any{},
-		},
-		{
-			name: "should build raw where clause with single arg",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("users").
-					WhereRaw("name = ?", "John Doe")
-			},
-			expectedSQL:  `SELECT * FROM "users" WHERE name = $1`,
-			expectedArgs: []any{"John Doe"},
 		},
 		{
 			name: "should build raw where clause with multiple args",
@@ -3009,7 +3017,7 @@ func TestPostgresDialect_WhereRaw(t *testing.T) {
 					From("users").
 					WhereRaw("")
 			},
-			expectedError: "WHERE RAW clause requires a non-empty query",
+			expectedError: ErrEmptyExpression,
 		},
 	}
 
@@ -3029,9 +3037,9 @@ func TestPostgresDialect_WhereRaw(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -3052,7 +3060,7 @@ func TestPostgresDialect_OrWhereRaw(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build OR raw where clause without args",
@@ -3065,18 +3073,6 @@ func TestPostgresDialect_OrWhereRaw(t *testing.T) {
 			},
 			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR id = 1`,
 			expectedArgs: []any{"inactive"},
-		},
-		{
-			name: "should build OR raw where clause with single arg",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("users").
-					Where("status", "=", "inactive").
-					OrWhereRaw("name = ?", "John Doe")
-			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR name = $2`,
-			expectedArgs: []any{"inactive", "John Doe"},
 		},
 		{
 			name: "should build OR raw where clause with multiple args",
@@ -3122,7 +3118,7 @@ func TestPostgresDialect_OrWhereRaw(t *testing.T) {
 					From("users").
 					OrWhereRaw("")
 			},
-			expectedError: "WHERE RAW clause requires a non-empty query",
+			expectedError: ErrEmptyExpression,
 		},
 	}
 
@@ -3142,9 +3138,9 @@ func TestPostgresDialect_OrWhereRaw(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -3165,7 +3161,7 @@ func TestPostgresDialect_WhereGroup(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build grouped where clauses",
@@ -3183,24 +3179,6 @@ func TestPostgresDialect_WhereGroup(t *testing.T) {
 			expectedArgs: []any{"active", 18, 65},
 		},
 		{
-			name: "should build nested grouped where clauses",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("users").
-					Where("status", "=", "active").
-					WhereGroup(func(q QueryBuilder) {
-						q.Where("age", ">", 18).
-							OrWhereGroup(func(q2 QueryBuilder) {
-								q2.Where("role", "=", "admin").
-									Where("department", "=", "IT")
-							})
-					})
-			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 AND ("age" > $2 OR ("role" = $3 AND "department" = $4))`,
-			expectedArgs: []any{"active", 18, "admin", "IT"},
-		},
-		{
 			name: "should handle empty group",
 			build: func(b *builder) QueryBuilder {
 				return b.
@@ -3213,20 +3191,6 @@ func TestPostgresDialect_WhereGroup(t *testing.T) {
 			},
 			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1`,
 			expectedArgs: []any{"active"},
-		},
-		{
-			name: "should handle group with only one condition",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("users").
-					Where("status", "=", "active").
-					WhereGroup(func(q QueryBuilder) {
-						q.Where("age", ">", 18)
-					})
-			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 AND ("age" > $2)`,
-			expectedArgs: []any{"active", 18},
 		},
 		{
 			name: "should handle leading WhereGroup as first WHERE clause",
@@ -3308,17 +3272,26 @@ func TestPostgresDialect_WhereGroup(t *testing.T) {
 			expectedArgs: []any{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		},
 		{
-			name: "should return error when group has an invalid clause",
+			name: "should return error when nil passed as group",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("users").
-					WhereGroup(func(q QueryBuilder) {
-						q.Where("age", "=", 18).
-							WhereBetween("", 50, 100)
+					WhereGroup(nil)
+			},
+			expectedError: ErrNilFunc,
+		},
+		{
+			name: "should return error when child query error",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					WhereGroup(func(qb QueryBuilder) {
+						qb.WhereIn("", 1, 2, 3) // it should be an error empty column
 					})
 			},
-			expectedError: "WHERE clause requires non-empty column",
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -3338,9 +3311,9 @@ func TestPostgresDialect_WhereGroup(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -3361,7 +3334,7 @@ func TestPostgresDialect_OrWhereGroup(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build OR grouped where clauses",
@@ -3379,24 +3352,6 @@ func TestPostgresDialect_OrWhereGroup(t *testing.T) {
 			expectedArgs: []any{"active", 18, 65},
 		},
 		{
-			name: "should build nested OR grouped where clauses",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("users").
-					Where("status", "=", "active").
-					OrWhereGroup(func(q QueryBuilder) {
-						q.Where("age", ">", 18).
-							OrWhereGroup(func(q2 QueryBuilder) {
-								q2.Where("role", "=", "admin").
-									Where("department", "=", "IT")
-							})
-					})
-			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR ("age" > $2 OR ("role" = $3 AND "department" = $4))`,
-			expectedArgs: []any{"active", 18, "admin", "IT"},
-		},
-		{
 			name: "should handle empty group",
 			build: func(b *builder) QueryBuilder {
 				return b.
@@ -3409,20 +3364,6 @@ func TestPostgresDialect_OrWhereGroup(t *testing.T) {
 			},
 			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1`,
 			expectedArgs: []any{"active"},
-		},
-		{
-			name: "should handle group with only one condition",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("users").
-					Where("status", "=", "active").
-					OrWhereGroup(func(q QueryBuilder) {
-						q.Where("age", ">", 18)
-					})
-			},
-			expectedSQL:  `SELECT * FROM "users" WHERE "status" = $1 OR ("age" > $2)`,
-			expectedArgs: []any{"active", 18},
 		},
 		{
 			name: "should handle leading OrWhereGroup as first WHERE clause",
@@ -3523,9 +3464,9 @@ func TestPostgresDialect_OrWhereGroup(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -3546,7 +3487,7 @@ func TestPostgresDialect_WhereSub(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build where clause with subquery",
@@ -3641,20 +3582,20 @@ func TestPostgresDialect_WhereSub(t *testing.T) {
 					From("users").
 					WhereSub("id", "IN", nil)
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrNilFunc,
 		},
 		{
-			name: "should return error when subquery is empty",
+			name: "should return error when child query error",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("users").
 					Where("status", "=", "active").
 					WhereSub("id", "IN", func(q QueryBuilder) {
-						// Empty subquery
+						q.Select("user_id").From("")
 					})
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrEmptyTable,
 		},
 	}
 
@@ -3674,9 +3615,9 @@ func TestPostgresDialect_WhereSub(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -3697,7 +3638,7 @@ func TestPostgresDialect_OrWhereSub(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build OR where clause with subquery",
@@ -3812,20 +3753,20 @@ func TestPostgresDialect_OrWhereSub(t *testing.T) {
 					Where("status", "=", "inactive").
 					OrWhereSub("id", "IN", nil)
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrNilFunc,
 		},
 		{
-			name: "should return error when subquery is empty",
+			name: "should return error when child query error",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("users").
-					Where("status", "=", "inactive").
+					Where("status", "=", "active").
 					OrWhereSub("id", "IN", func(q QueryBuilder) {
-						// Empty subquery
+						q.Select("user_id").From("")
 					})
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrEmptyTable,
 		},
 	}
 
@@ -3845,9 +3786,9 @@ func TestPostgresDialect_OrWhereSub(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -3868,7 +3809,7 @@ func TestPostgresDialect_WhereExists(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build EXISTS clause",
@@ -3931,19 +3872,19 @@ func TestPostgresDialect_WhereExists(t *testing.T) {
 					From("users").
 					WhereExists(nil)
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrNilFunc,
 		},
 		{
-			name: "should return error when subquery is empty",
+			name: "should return error when child query error",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("users").
 					WhereExists(func(q QueryBuilder) {
-						// Empty subquery
+						q.Select("user_id").From("")
 					})
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrEmptyTable,
 		},
 	}
 
@@ -3963,9 +3904,9 @@ func TestPostgresDialect_WhereExists(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -3986,7 +3927,7 @@ func TestPostgresDialect_OrWhereExists(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build OR EXISTS clause",
@@ -4067,20 +4008,20 @@ func TestPostgresDialect_OrWhereExists(t *testing.T) {
 					Where("status", "=", "inactive").
 					OrWhereExists(nil)
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrNilFunc,
 		},
 		{
-			name: "should return error when subquery is empty",
+			name: "should return error when child query error",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("users").
 					Where("status", "=", "inactive").
 					OrWhereExists(func(q QueryBuilder) {
-						// Empty subquery
+						q.Select("user_id").From("")
 					})
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrEmptyTable,
 		},
 	}
 
@@ -4100,9 +4041,9 @@ func TestPostgresDialect_OrWhereExists(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -4123,7 +4064,7 @@ func TestPostgresDialect_WhereNotExists(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build NOT EXISTS clause",
@@ -4186,19 +4127,19 @@ func TestPostgresDialect_WhereNotExists(t *testing.T) {
 					From("users").
 					WhereNotExists(nil)
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrNilFunc,
 		},
 		{
-			name: "should return error when subquery is empty",
+			name: "should return error when child query error",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("users").
 					WhereNotExists(func(q QueryBuilder) {
-						// Empty subquery
+						q.Select("user_id").From("")
 					})
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrEmptyTable,
 		},
 	}
 
@@ -4218,9 +4159,9 @@ func TestPostgresDialect_WhereNotExists(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -4241,7 +4182,7 @@ func TestPostgresDialect_OrWhereNotExists(t *testing.T) {
 		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
 			name: "should build OR NOT EXISTS clause",
@@ -4322,20 +4263,20 @@ func TestPostgresDialect_OrWhereNotExists(t *testing.T) {
 					Where("status", "=", "inactive").
 					OrWhereNotExists(nil)
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrNilFunc,
 		},
 		{
-			name: "should return error when subquery is empty",
+			name: "should return error when child query error",
 			build: func(b *builder) QueryBuilder {
 				return b.
 					Select().
 					From("users").
 					Where("status", "=", "inactive").
 					OrWhereNotExists(func(q QueryBuilder) {
-						// Empty subquery
+						q.Select("user_id").From("")
 					})
 			},
-			expectedError: "WHERE SUB clause cannot be empty",
+			expectedError: ErrEmptyTable,
 		},
 	}
 
@@ -4355,9 +4296,9 @@ func TestPostgresDialect_OrWhereNotExists(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return

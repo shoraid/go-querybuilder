@@ -2,7 +2,6 @@ package sequel
 
 import (
 	"fmt"
-	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -85,8 +84,8 @@ func (d PostgresDialect) WrapTable(expr string) string {
 }
 
 func (d PostgresDialect) CompileSelect(b *builder) (string, []any, error) {
-	if b.table == "" {
-		return "", nil, fmt.Errorf("no table specified")
+	if b.err != nil {
+		return "", nil, b.err
 	}
 
 	args := []any{}
@@ -177,14 +176,6 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			*globalArgs = append(*globalArgs, w.args...)
 
 		case QueryBetween:
-			if w.column == "" {
-				return "", fmt.Errorf("WHERE clause requires non-empty column")
-			}
-
-			if w.args[0] == nil || w.args[1] == nil {
-				return "", fmt.Errorf("BETWEEN clause requires two non-nil values for column")
-			}
-
 			sb.WriteString("(")
 			sb.WriteString(d.WrapColumn(w.column))
 			sb.WriteString(" ")
@@ -197,36 +188,42 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			*globalArgs = append(*globalArgs, w.args...)
 
 		case QueryIn:
-			if w.column == "" {
-				return "", fmt.Errorf("WHERE clause requires non-empty column")
-			}
-
-			inClause, err := d.handleWhereIn(w, globalArgs)
-			if err != nil {
-				return "", err
-			}
-
-			sb.WriteString(inClause)
-
-		case QueryNull:
-			if w.column == "" {
-				return "", fmt.Errorf("WHERE clause requires non-empty column")
+			if len(w.args) == 0 {
+				if w.operator == "NOT IN" {
+					sb.WriteString("1 = 1")
+				} else {
+					sb.WriteString("1 = 0")
+				}
+				return sb.String(), nil
 			}
 
 			sb.WriteString(d.WrapColumn(w.column))
 			sb.WriteString(" ")
 			sb.WriteString(w.operator)
+			sb.WriteString(" (")
+
+			for i := range w.args {
+				if i > 0 {
+					sb.WriteString(", ")
+				}
+				sb.WriteString(d.Placeholder(len(*globalArgs) + i + 1))
+			}
+			sb.WriteString(")")
+			*globalArgs = append(*globalArgs, w.args...)
+
+		case QueryNull:
+			sb.WriteString(d.WrapColumn(w.column))
+			sb.WriteString(" ")
+			sb.WriteString(w.operator)
 
 		case QueryRaw:
-			if w.expr == "" {
-				return "", fmt.Errorf("WHERE RAW clause requires a non-empty query")
-			}
-
 			expr := w.expr
+
 			for _, arg := range w.args {
 				expr = strings.Replace(expr, "?", d.Placeholder(len(*globalArgs)+1), 1)
 				*globalArgs = append(*globalArgs, arg)
 			}
+
 			sb.WriteString(expr)
 
 		case QueryNested:
@@ -240,23 +237,9 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(")")
 
 		case QuerySub:
-			if w.sub == nil {
-				return "", fmt.Errorf("WHERE SUB clause cannot be empty")
-			}
-
-			if subBuilder, ok := w.sub.(*builder); ok {
-				if subBuilder.action == "" || subBuilder.table == "" {
-					return "", fmt.Errorf("WHERE SUB clause cannot be empty")
-				}
-			}
-
 			subSQL, subArgs, err := w.sub.ToSQL()
 			if err != nil {
 				return "", err
-			}
-
-			if strings.TrimSpace(subSQL) == "" {
-				return "", fmt.Errorf("WHERE SUB clause cannot be empty")
 			}
 
 			// Renumber placeholders inside subquery SQL without collisions
@@ -285,61 +268,6 @@ func (d PostgresDialect) compileWhereClause(wheres []where, globalArgs *[]any) (
 			sb.WriteString(")")
 		}
 	}
-
-	return sb.String(), nil
-}
-
-func (d PostgresDialect) handleWhereIn(w where, globalArgs *[]any) (string, error) {
-	flatArgs := make([]any, 0)
-
-	for _, v := range w.args {
-		if v == nil {
-			return "", fmt.Errorf("IN clause does not support nil, use IS NULL instead")
-		}
-
-		rv := reflect.ValueOf(v)
-		switch rv.Kind() {
-		case reflect.Slice, reflect.Array:
-			for i := 0; i < rv.Len(); i++ {
-				elem := rv.Index(i).Interface()
-				if elem == nil {
-					return "", fmt.Errorf("IN clause contains nil value in slice, use IS NULL instead")
-				}
-				ev := reflect.ValueOf(elem)
-				if ev.Kind() == reflect.Slice || ev.Kind() == reflect.Array {
-					return "", fmt.Errorf("IN clause does not support nested slices")
-				}
-				flatArgs = append(flatArgs, elem)
-			}
-		default:
-			flatArgs = append(flatArgs, v)
-		}
-	}
-
-	var sb strings.Builder
-
-	if len(flatArgs) == 0 {
-		if w.operator == "NOT IN" {
-			sb.WriteString("1 = 1")
-		} else {
-			sb.WriteString("1 = 0")
-		}
-		return sb.String(), nil
-	}
-
-	sb.WriteString(d.WrapColumn(w.column))
-	sb.WriteString(" ")
-	sb.WriteString(w.operator)
-	sb.WriteString(" (")
-
-	for i := range flatArgs {
-		if i > 0 {
-			sb.WriteString(", ")
-		}
-		sb.WriteString(d.Placeholder(len(*globalArgs) + i + 1))
-	}
-	sb.WriteString(")")
-	*globalArgs = append(*globalArgs, flatArgs...)
 
 	return sb.String(), nil
 }

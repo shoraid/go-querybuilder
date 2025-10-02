@@ -213,6 +213,12 @@ func (b *builder) addWhereGroup(conj string, fn func(QueryBuilder)) {
 	nestedBuilder := New(b.dialect).(*builder)
 	fn(nestedBuilder)
 
+	// propagate child error
+	if nestedBuilder.err != nil {
+		b.addErr(nestedBuilder.err)
+		return
+	}
+
 	if len(nestedBuilder.wheres) > 0 {
 		b.wheres = append(b.wheres, where{
 			queryType: QueryNested,
@@ -261,6 +267,12 @@ func (b *builder) addWhereSub(conj, column, operator string, fn func(QueryBuilde
 	subBuilder := New(b.dialect).(*builder)
 	subBuilder.action = "select"
 	fn(subBuilder)
+
+	// propagate child error
+	if subBuilder.err != nil {
+		b.addErr(subBuilder.err)
+		return
+	}
 
 	b.wheres = append(b.wheres, where{
 		queryType: QuerySub,

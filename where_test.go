@@ -1987,6 +1987,15 @@ func TestBuilder_WhereGroup(t *testing.T) {
 			groupFn:       nil,
 			expectedError: ErrNilFunc,
 		},
+		{
+			name:          "should return an error when Group func adds an error to its builder",
+			initialWheres: []where{},
+			groupFn: func(qb QueryBuilder) {
+				qb.WhereIn("", 1, 2) // This will cause an error
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyColumn,
+		},
 	}
 
 	for _, tt := range tests {
@@ -2106,6 +2115,15 @@ func TestBuilder_OrWhereGroup(t *testing.T) {
 			groupFn:       nil,
 			expectedError: ErrNilFunc,
 		},
+		{
+			name:          "should return an error when Group func adds an error to its builder",
+			initialWheres: []where{},
+			groupFn: func(qb QueryBuilder) {
+				qb.WhereIn("", 1, 2) // This will cause an error
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyColumn,
+		},
 	}
 
 	for _, tt := range tests {
@@ -2189,6 +2207,17 @@ func TestBuilder_WhereSub(t *testing.T) {
 			subFn:          nil,
 			expectedWheres: []where{},
 			expectedError:  ErrNilFunc,
+		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
+			initialWheres: []where{},
+			column:        "user_id",
+			operator:      "IN",
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
 		},
 	}
 
@@ -2297,6 +2326,17 @@ func TestBuilder_OrWhereSub(t *testing.T) {
 			expectedWheres: []where{},
 			expectedError:  ErrNilFunc,
 		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
+			initialWheres: []where{},
+			column:        "user_id",
+			operator:      "IN",
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
+		},
 	}
 
 	for _, tt := range tests {
@@ -2397,6 +2437,15 @@ func TestBuilder_WhereExists(t *testing.T) {
 			subFn:          nil,
 			expectedWheres: []where{},
 			expectedError:  ErrNilFunc,
+		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
 		},
 	}
 
@@ -2501,6 +2550,15 @@ func TestBuilder_OrWhereExists(t *testing.T) {
 			expectedWheres: []where{},
 			expectedError:  ErrNilFunc,
 		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
+		},
 	}
 
 	for _, tt := range tests {
@@ -2597,6 +2655,15 @@ func TestBuilder_WhereNotExists(t *testing.T) {
 			subFn:          nil,
 			expectedWheres: []where{},
 			expectedError:  ErrNilFunc,
+		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
 		},
 	}
 
@@ -2696,6 +2763,15 @@ func TestBuilder_OrWhereNotExists(t *testing.T) {
 			subFn:          nil,
 			expectedWheres: []where{},
 			expectedError:  ErrNilFunc,
+		},
+		{
+			name:          "should return an error when subFn creates an invalid subquery",
+			initialWheres: []where{},
+			subFn: func(qb QueryBuilder) {
+				qb.Select("id").From("").Where("status", "=", "active") // Empty table name
+			},
+			expectedWheres: []where{},
+			expectedError:  ErrEmptyTable,
 		},
 	}
 
