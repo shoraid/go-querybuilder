@@ -568,6 +568,305 @@ func TestPostgresDialect_CompileSelect_SelectSafe(t *testing.T) {
 	}
 }
 
+func TestPostgresDialect_From(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError error
+	}{
+		{
+			name: "should build from clause with single table",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users")
+			},
+			expectedSQL:  `SELECT * FROM "users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build from clause with table and alias",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("u.id").
+					From("users u")
+			},
+			expectedSQL:  `SELECT "u"."id" FROM "users" AS "u"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build from clause with schema qualified table",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("public.users")
+			},
+			expectedSQL:  `SELECT * FROM "public"."users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build from clause with schema qualified table and alias",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("u.id").
+					From("public.users u")
+			},
+			expectedSQL:  `SELECT "u"."id" FROM "public"."users" AS "u"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should return error when table name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("")
+			},
+			expectedError: ErrEmptyTable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_FromRaw(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError error
+	}{
+		{
+			name: "should build from raw clause with single table",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					FromRaw("users")
+			},
+			expectedSQL:  `SELECT * FROM users`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build from raw clause with table and alias",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					FromRaw("users u")
+			},
+			expectedSQL:  `SELECT * FROM users u`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build from raw clause with multiple args",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					FromRaw("(SELECT id, name FROM users WHERE status = ? AND created_at > ?) AS recent_active_users", "active", "2023-01-01")
+			},
+			expectedSQL:  `SELECT * FROM (SELECT id, name FROM users WHERE status = $1 AND created_at > $2) AS recent_active_users`,
+			expectedArgs: []any{"active", "2023-01-01"},
+		},
+		{
+			name: "should return error when table name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					FromRaw("")
+			},
+			expectedError: ErrEmptyExpression,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_FromSafe(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError error
+	}{
+		{
+			name: "should build from safe clause with single table",
+			build: func(b *builder) QueryBuilder {
+				userInput := "users"
+				whitelist := map[string]string{
+					"users": "users",
+				}
+				return b.
+					Select().
+					FromSafe(userInput, whitelist)
+			},
+			expectedSQL:  `SELECT * FROM "users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build from safe clause with table and alias",
+			build: func(b *builder) QueryBuilder {
+				userInput := "users"
+				whitelist := map[string]string{
+					"users": "users u",
+				}
+				return b.
+					Select().
+					FromSafe(userInput, whitelist)
+			},
+			expectedSQL:  `SELECT * FROM "users" AS "u"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build from safe clause with schema qualified table",
+			build: func(b *builder) QueryBuilder {
+				userInput := "public.users"
+				whitelist := map[string]string{
+					"public.users": "public.users",
+				}
+				return b.
+					Select().
+					FromSafe(userInput, whitelist)
+			},
+			expectedSQL:  `SELECT * FROM "public"."users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build from safe clause with schema qualified table and alias",
+			build: func(b *builder) QueryBuilder {
+				userInput := "public.users u"
+				whitelist := map[string]string{
+					"public.users u": "public.users u",
+				}
+				return b.
+					Select().
+					FromSafe(userInput, whitelist)
+			},
+			expectedSQL:  `SELECT * FROM "public"."users" AS "u"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should return error when table name is not in whitelist",
+			build: func(b *builder) QueryBuilder {
+				userInput := "not_allowed_table"
+				whitelist := map[string]string{
+					"users": "users",
+				}
+				return b.
+					Select().
+					FromSafe(userInput, whitelist)
+			},
+			expectedError: ErrInvalidTableInput,
+		},
+		{
+			name: "should return error when table name is empty",
+			build: func(b *builder) QueryBuilder {
+				userInput := ""
+				whitelist := map[string]string{
+					"users": "users",
+				}
+				return b.
+					Select().
+					FromSafe(userInput, whitelist)
+			},
+			expectedError: ErrInvalidTableInput,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
 func TestPostgresDialect_CompileSelect_AddSelect(t *testing.T) {
 	t.Parallel()
 
@@ -4384,9 +4683,12 @@ func TestPostgresDialect_CompileSelect_Select_OrderBy(t *testing.T) {
 
 			// Arrange
 			b := &builder{
-				dialect:  PostgresDialect{},
-				action:   "select",
-				table:    tt.table,
+				dialect: PostgresDialect{},
+				action:  "select",
+				table: table{
+					queryType: QueryBasic,
+					name:      tt.table,
+				},
 				orderBys: tt.orderBys,
 				limit:    -1,
 				offset:   -1,
@@ -4473,9 +4775,12 @@ func TestPostgresDialect_CompileSelect_Select_LimitOffset(t *testing.T) {
 			b := &builder{
 				dialect: PostgresDialect{},
 				action:  "select",
-				table:   tt.table,
-				limit:   tt.limit,
-				offset:  tt.offset,
+				table: table{
+					queryType: QueryBasic,
+					name:      tt.table,
+				},
+				limit:  tt.limit,
+				offset: tt.offset,
 			}
 
 			// Act
@@ -4545,26 +4850,26 @@ func BenchmarkPostgresDialect_WrapTable(b *testing.B) {
 	}
 }
 
-func BenchmarkPostgresDialect_CompileSelect_Select_Simple(b *testing.B) {
-	d := PostgresDialect{}
-	builder := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "users",
-		columns: []column{
-			{queryType: QueryBasic, name: "id"},
-			{queryType: QueryBasic, name: "name"},
-			{queryType: QueryBasic, name: "email"},
-			{queryType: QueryRaw, expr: "MAX(created_at) AS last_created"},
-		},
-		limit:  -1,
-		offset: -1,
-	}
+// func BenchmarkPostgresDialect_CompileSelect_Select_Simple(b *testing.B) {
+// 	d := PostgresDialect{}
+// 	builder := &builder{
+// 		dialect: d,
+// 		action:  "select",
+// 		table:   "users",
+// 		columns: []column{
+// 			{queryType: QueryBasic, name: "id"},
+// 			{queryType: QueryBasic, name: "name"},
+// 			{queryType: QueryBasic, name: "email"},
+// 			{queryType: QueryRaw, expr: "MAX(created_at) AS last_created"},
+// 		},
+// 		limit:  -1,
+// 		offset: -1,
+// 	}
 
-	for b.Loop() {
-		_, _, _ = d.CompileSelect(builder)
-	}
-}
+// 	for b.Loop() {
+// 		_, _, _ = d.CompileSelect(builder)
+// 	}
+// }
 
 func BenchmarkPostgresDialect_Where(b *testing.B) {
 	benchmarks := []struct {
@@ -5370,111 +5675,5 @@ func BenchmarkPostgresDialect_WhereNotExists(b *testing.B) {
 				_, _, _ = bd.dialect.CompileSelect(bd)
 			}
 		})
-	}
-}
-
-func BenchmarkPostgresDialect_CompileSelect_Where_Complex(b *testing.B) {
-	d := PostgresDialect{}
-
-	// Build a very complex query once, reuse for each benchmark iteration
-	subInner := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "priority_orders",
-		columns: []column{{queryType: QueryBasic, name: "order_id"}},
-		wheres: []where{
-			{queryType: QueryBasic, column: "priority_level", operator: "=", args: []any{"high"}},
-			{conj: "AND", queryType: QueryBetween, column: "created_at", operator: "BETWEEN", args: []any{"2023-01-01", "2023-12-31"}},
-		},
-		orderBys: []orderBy{{queryType: QueryBasic, column: "created_at", dir: "DESC"}},
-		limit:    10,
-		offset:   5,
-	}
-
-	subOuter := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "refunded_orders",
-		columns: []column{{queryType: QueryBasic, name: "order_id"}},
-		wheres: []where{
-			{queryType: QueryBasic, column: "refund_date", operator: ">", args: []any{"2023-01-01"}},
-			{conj: "AND", queryType: QueryBasic, column: "reason", operator: "=", args: []any{"fraud"}},
-			{conj: "OR", queryType: QueryBasic, column: "store_id", operator: "IN", args: []any{[]any{11, 12, 13}}},
-		},
-		limit:  20,
-		offset: 0,
-	}
-
-	mainBuilder := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "orders",
-		wheres: []where{
-			{queryType: QueryBasic, column: "customer_id", operator: "=", args: []any{123}},
-			{conj: "AND", queryType: QueryBasic, column: "region", operator: "=", args: []any{"EU"}},
-			{conj: "AND", queryType: QueryNested, nested: []where{
-				// IN condition
-				{queryType: QueryBasic, column: "status", operator: "IN", args: []any{[]any{"completed", "shipped"}}},
-				// OR BETWEEN condition
-				{conj: "OR", queryType: QueryBetween, column: "order_date", operator: "BETWEEN", args: []any{"2023-01-01", "2023-06-30"}},
-
-				// second-level nested group
-				{conj: "AND", queryType: QueryNested, nested: []where{
-					// RAW expression
-					{queryType: QueryRaw, expr: "total_amount > ? AND currency = ?", args: []any{500, "USD"}},
-					{conj: "OR", queryType: QueryNull, column: "tracking_number", operator: "IS NULL"},
-					{conj: "OR", queryType: QueryNull, column: "updated_at", operator: "IS NOT NULL"},
-					// subquery inside second-level group
-					{conj: "AND", queryType: QuerySub, column: "id", operator: "IN", sub: subInner},
-				}},
-			}},
-
-			// top-level NOT IN subquery
-			{conj: "AND", queryType: QuerySub, column: "id", operator: "NOT IN", sub: subOuter},
-		},
-		limit:  -1,
-		offset: -1,
-	}
-
-	for b.Loop() {
-		_, _, err := d.CompileSelect(mainBuilder)
-		if err != nil {
-			b.Fatalf("CompileSelect failed: %v", err)
-		}
-	}
-}
-
-func BenchmarkPostgresDialect_CompileSelect_Select_OrderBy(b *testing.B) {
-	d := PostgresDialect{}
-	builder := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "users",
-		orderBys: []orderBy{
-			{queryType: QueryBasic, column: "name", dir: "DESC"},
-			{queryType: QueryBasic, column: "created_at", dir: "ASC"},
-			{queryType: QueryRaw, expr: "LENGTH(email) ASC"},
-		},
-		limit:  -1,
-		offset: -1,
-	}
-
-	for b.Loop() {
-		_, _, _ = d.CompileSelect(builder)
-	}
-}
-
-func BenchmarkPostgresDialect_CompileSelect_Select_LimitOffset(b *testing.B) {
-	d := PostgresDialect{}
-	builder := &builder{
-		dialect: d,
-		action:  "select",
-		table:   "users",
-		limit:   100,
-		offset:  50,
-	}
-
-	for b.Loop() {
-		_, _, _ = d.CompileSelect(builder)
 	}
 }

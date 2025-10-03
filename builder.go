@@ -9,7 +9,9 @@ type QueryBuilder interface {
 	AddSelectRaw(expr string, args ...any) QueryBuilder
 	AddSelectSafe(userInput []string, whitelist map[string]string) QueryBuilder
 
+	// From
 	From(table string) QueryBuilder
+	FromRaw(expr string, args ...any) QueryBuilder
 	FromSafe(userInput string, whitelist map[string]string) QueryBuilder
 	ToSQL() (string, []any, error)
 
@@ -55,9 +57,6 @@ type QueryBuilder interface {
 	Limit(limit int) QueryBuilder
 	Offset(offset int) QueryBuilder
 
-	// Getter
-	GetTable() string
-	GetAction() string
 	Dialect() Dialect
 }
 
@@ -74,6 +73,13 @@ const (
 )
 
 type column struct {
+	queryType QueryType
+	name      string
+	expr      string
+	args      []any
+}
+
+type table struct {
 	queryType QueryType
 	name      string
 	expr      string
@@ -102,7 +108,7 @@ type where struct {
 type builder struct {
 	dialect  Dialect
 	action   string
-	table    string
+	table    table
 	columns  []column
 	wheres   []where
 	orderBys []orderBy
@@ -121,12 +127,4 @@ func New(d Dialect) QueryBuilder {
 
 func (b *builder) Dialect() Dialect {
 	return b.dialect
-}
-
-func (b *builder) GetAction() string {
-	return b.action
-}
-
-func (b *builder) GetTable() string {
-	return b.table
 }

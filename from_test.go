@@ -11,32 +11,36 @@ func TestBuilder_From(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		table         string
-		expectedTable string
+		initialTable  table
+		tableName     string
+		expectedTable table
 		expectedError error
 	}{
 		{
-			name:          "should set table name",
-			table:         "users",
-			expectedTable: "users",
-			expectedError: nil,
+			name:          "should set table name correctly",
+			tableName:     "users",
+			expectedTable: table{queryType: QueryBasic, name: "users"},
 		},
 		{
 			name:          "should set table name with schema",
-			table:         "public.users",
-			expectedTable: "public.users",
-			expectedError: nil,
+			tableName:     "public.users",
+			expectedTable: table{queryType: QueryBasic, name: "public.users"},
 		},
 		{
 			name:          "should set table name with alias",
-			table:         "users u",
-			expectedTable: "users u",
-			expectedError: nil,
+			tableName:     "users as u",
+			expectedTable: table{queryType: QueryBasic, name: "users as u"},
+		},
+		{
+			name:          "should overwrite existing table name",
+			initialTable:  table{queryType: QueryBasic, name: "old_users"},
+			tableName:     "new_users",
+			expectedTable: table{queryType: QueryBasic, name: "new_users"},
 		},
 		{
 			name:          "should return error for empty table name",
-			table:         "",
-			expectedTable: "",
+			tableName:     "",
+			expectedTable: table{},
 			expectedError: ErrEmptyTable,
 		},
 	}
@@ -46,10 +50,10 @@ func TestBuilder_From(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{}
+			b := &builder{table: tt.initialTable}
 
 			// Act
-			result := b.From(tt.table)
+			result := b.From(tt.tableName)
 
 			// Assert
 			if tt.expectedError != nil {
@@ -58,9 +62,72 @@ func TestBuilder_From(t *testing.T) {
 				return
 			}
 
-			assert.NoError(t, b.err, "expected no error")
-			assert.Equal(t, tt.expectedTable, b.table, "expected table to be set correctly")
+			assert.NoError(t, b.err)
+			assert.Equal(t, tt.expectedTable, b.table, "expected table to be updated correctly")
 			assert.Equal(t, b, result, "expected From() to return the same builder instance")
+		})
+	}
+}
+
+func TestBuilder_FromRaw(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		initialTable  table
+		expression    string
+		args          []any
+		expectedTable table
+		expectedError error
+	}{
+		{
+			name:          "should set raw table expression",
+			expression:    "(SELECT id, name FROM users WHERE status = ?) as active_users",
+			args:          []any{"active"},
+			expectedTable: table{queryType: QueryRaw, expr: "(SELECT id, name FROM users WHERE status = ?) as active_users", args: []any{"active"}},
+		},
+		{
+			name:          "should overwrite existing table with raw expression",
+			initialTable:  table{queryType: QueryBasic, name: "old_table"},
+			expression:    "my_function(?, ?) as result",
+			args:          []any{1, "test"},
+			expectedTable: table{queryType: QueryRaw, expr: "my_function(?, ?) as result", args: []any{1, "test"}},
+		},
+		{
+			name:          "should handle raw expression without arguments",
+			expression:    "generate_series(1, 10) as s(id)",
+			args:          []any{},
+			expectedTable: table{queryType: QueryRaw, expr: "generate_series(1, 10) as s(id)", args: []any{}},
+		},
+		{
+			name:          "should return error for empty raw expression",
+			expression:    "",
+			args:          []any{},
+			expectedTable: table{},
+			expectedError: ErrEmptyExpression,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{table: tt.initialTable}
+
+			// Act
+			result := b.FromRaw(tt.expression, tt.args...)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+				return
+			}
+
+			assert.NoError(t, b.err)
+			assert.Equal(t, tt.expectedTable, b.table, "expected table to be updated correctly")
+			assert.Equal(t, b, result, "expected FromRaw() to return the same builder instance")
 		})
 	}
 }
@@ -69,58 +136,57 @@ func TestBuilder_FromSafe(t *testing.T) {
 	t.Parallel()
 
 	whitelist := map[string]string{
-		"users":          "users",
-		"orders":         "public.orders",
-		"products_alias": "products p",
+		"users":    "users",
+		"orders":   "orders o",
+		"products": "public.products",
 	}
 
 	tests := []struct {
 		name          string
+		initialTable  table
 		userInput     string
 		whitelist     map[string]string
-		expectedTable string
+		expectedTable table
 		expectedError error
 	}{
 		{
-			name:          "should set table from whitelist",
+			name:          "should set valid table name from whitelist",
 			userInput:     "users",
 			whitelist:     whitelist,
-			expectedTable: "users",
-			expectedError: nil,
+			expectedTable: table{queryType: QueryBasic, name: "users"},
 		},
 		{
-			name:          "should set table with schema from whitelist",
+			name:          "should set valid table name with schema from whitelist",
+			userInput:     "products",
+			whitelist:     whitelist,
+			expectedTable: table{queryType: QueryBasic, name: "public.products"},
+		},
+		{
+			name:          "should overwrite existing table with valid table from whitelist",
+			initialTable:  table{queryType: QueryBasic, name: "old_table"},
 			userInput:     "orders",
 			whitelist:     whitelist,
-			expectedTable: "public.orders",
-			expectedError: nil,
+			expectedTable: table{queryType: QueryBasic, name: "orders o"},
 		},
 		{
-			name:          "should set table with alias from whitelist",
-			userInput:     "products_alias",
-			whitelist:     whitelist,
-			expectedTable: "products p",
-			expectedError: nil,
-		},
-		{
-			name:          "should return error for invalid user input",
+			name:          "should return error for invalid table name not in whitelist",
 			userInput:     "invalid_table",
 			whitelist:     whitelist,
-			expectedTable: "",
+			expectedTable: table{},
 			expectedError: ErrInvalidTableInput,
 		},
 		{
 			name:          "should return error for empty user input",
 			userInput:     "",
 			whitelist:     whitelist,
-			expectedTable: "",
+			expectedTable: table{},
 			expectedError: ErrInvalidTableInput,
 		},
 		{
 			name:          "should return error for empty whitelist",
 			userInput:     "users",
 			whitelist:     map[string]string{},
-			expectedTable: "",
+			expectedTable: table{},
 			expectedError: ErrInvalidTableInput,
 		},
 	}
@@ -130,7 +196,7 @@ func TestBuilder_FromSafe(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{}
+			b := &builder{table: tt.initialTable}
 
 			// Act
 			result := b.FromSafe(tt.userInput, tt.whitelist)
@@ -142,9 +208,9 @@ func TestBuilder_FromSafe(t *testing.T) {
 				return
 			}
 
-			assert.NoError(t, b.err, "expected no error")
-			assert.Equal(t, tt.expectedTable, b.table, "expected table to be set correctly")
-			assert.Equal(t, b, result, "expected FromSafe() to return the same builder instance")
+			assert.NoError(t, b.err)
+			assert.Equal(t, tt.expectedTable, b.table, "expected table to be updated correctly")
+			assert.Equal(t, b, result, "expected FromRaw() to return the same builder instance")
 		})
 	}
 }
@@ -155,19 +221,31 @@ func TestBuilder_FromSafe(t *testing.T) {
 
 func BenchmarkBuilder_From(b *testing.B) {
 	builder := &builder{}
-	table := "users"
+	tableName := "users"
 
 	for b.Loop() {
-		builder.From(table)
+		builder.From(tableName)
+	}
+}
+
+func BenchmarkBuilder_FromRaw(b *testing.B) {
+	builder := &builder{}
+	expression := "(SELECT id, name FROM users WHERE status = ?) as active_users"
+	args := []any{"active"}
+
+	for b.Loop() {
+		builder.FromRaw(expression, args...)
 	}
 }
 
 func BenchmarkBuilder_FromSafe(b *testing.B) {
 	builder := &builder{}
-	userInput := "users"
+	userInput := "active_users"
 	whitelist := map[string]string{
-		"users":  "users",
-		"orders": "public.orders",
+		"users":        "users",
+		"orders":       "orders",
+		"products":     "public.products",
+		"active_users": "(SELECT id, name FROM users WHERE status = 'active')",
 	}
 
 	for b.Loop() {

@@ -97,7 +97,7 @@ func (d PostgresDialect) CompileSelect(b *builder) (string, []any, error) {
 
 	// FROM clause
 	sb.WriteString(" FROM ")
-	sb.WriteString(d.WrapTable(b.table))
+	sb.WriteString(d.compileFromClause(b.table, &args))
 
 	// WHERE clause (recursive)
 	if len(b.wheres) > 0 {
@@ -150,6 +150,25 @@ func (d PostgresDialect) compileSelectClause(columns []column, globalArgs *[]any
 				sb.WriteString(expr)
 			}
 		}
+	}
+
+	return sb.String()
+}
+
+func (d PostgresDialect) compileFromClause(table table, globalArgs *[]any) string {
+	var sb strings.Builder
+
+	switch table.queryType {
+	case QueryBasic:
+		return d.WrapTable(table.name)
+
+	case QueryRaw:
+		expr := table.expr
+		for _, arg := range table.args {
+			expr = strings.Replace(expr, "?", d.Placeholder(len(*globalArgs)+1), 1)
+			*globalArgs = append(*globalArgs, arg)
+		}
+		sb.WriteString(expr)
 	}
 
 	return sb.String()

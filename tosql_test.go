@@ -21,9 +21,12 @@ func TestBuilder_ToSQL(t *testing.T) {
 			builder: builder{
 				dialect: PostgresDialect{},
 				action:  "select",
-				table:   "users",
-				limit:   -1,
-				offset:  -1,
+				table: table{
+					queryType: QueryBasic,
+					name:      "users",
+				},
+				limit:  -1,
+				offset: -1,
 				wheres: []where{
 					{queryType: QueryBasic, column: "id", operator: "=", args: []any{1}},
 				},
@@ -36,7 +39,10 @@ func TestBuilder_ToSQL(t *testing.T) {
 			builder: builder{
 				dialect: PostgresDialect{},
 				action:  "update", // unsupported
-				table:   "users",
+				table: table{
+					queryType: QueryBasic,
+					name:      "users",
+				},
 			},
 			expectedError: ErrUnsupportedAction,
 		},
@@ -45,7 +51,10 @@ func TestBuilder_ToSQL(t *testing.T) {
 			builder: builder{
 				dialect: nil, // nil dialect
 				action:  "select",
-				table:   "users",
+				table: table{
+					queryType: QueryBasic,
+					name:      "users",
+				},
 			},
 			expectedError: ErrNoDialect,
 		},
@@ -54,9 +63,12 @@ func TestBuilder_ToSQL(t *testing.T) {
 			builder: builder{
 				dialect: PostgresDialect{},
 				action:  "select",
-				table:   "users",
-				limit:   -1,
-				offset:  -1,
+				table: table{
+					queryType: QueryBasic,
+					name:      "users",
+				},
+				limit:  -1,
+				offset: -1,
 				wheres: []where{
 					{
 						queryType: QueryNested,
@@ -67,10 +79,13 @@ func TestBuilder_ToSQL(t *testing.T) {
 								queryType: QuerySub, conj: "AND", column: "", operator: "EXISTS", args: []any{}, sub: &builder{
 									dialect: PostgresDialect{},
 									action:  "select",
-									table:   "orders",
-									limit:   -1,
-									offset:  -1,
-									err:     ErrEmptyColumn, // pre-existing error
+									table: table{
+										queryType: QueryBasic,
+										name:      "orders",
+									},
+									limit:  -1,
+									offset: -1,
+									err:    ErrEmptyColumn, // pre-existing error
 									wheres: []where{
 										{queryType: QueryIn, column: "", operator: "IN", args: []any{1, 2, 3}}, // This will cause ErrEmptyColumn
 									},
@@ -92,7 +107,7 @@ func TestBuilder_ToSQL(t *testing.T) {
 						queryType: QuerySub, column: "", operator: "EXISTS", args: []any{}, sub: &builder{
 							dialect: PostgresDialect{},
 							action:  "select",
-							table:   "", // This will cause ErrEmptyTable
+							table:   table{}, // This will cause ErrEmptyTable
 							limit:   -1,
 							offset:  -1,
 							err:     ErrEmptyTable, // pre-existing error
