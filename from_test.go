@@ -10,12 +10,35 @@ func TestBuilder_From(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		table string
+		name          string
+		table         string
+		expectedTable string
+		expectedError error
 	}{
-		{"should set table name correctly", "users"},
-		{"should accept table with alias", "users u"},
-		{"should accept schema.table", "public.users"},
+		{
+			name:          "should set table name",
+			table:         "users",
+			expectedTable: "users",
+			expectedError: nil,
+		},
+		{
+			name:          "should set table name with schema",
+			table:         "public.users",
+			expectedTable: "public.users",
+			expectedError: nil,
+		},
+		{
+			name:          "should set table name with alias",
+			table:         "users u",
+			expectedTable: "users u",
+			expectedError: nil,
+		},
+		{
+			name:          "should return error for empty table name",
+			table:         "",
+			expectedTable: "",
+			expectedError: ErrEmptyTable,
+		},
 	}
 
 	for _, tt := range tests {
@@ -29,7 +52,14 @@ func TestBuilder_From(t *testing.T) {
 			result := b.From(tt.table)
 
 			// Assert
-			assert.Equal(t, tt.table, b.table, "expected table to be set correctly")
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+				return
+			}
+
+			assert.NoError(t, b.err, "expected no error")
+			assert.Equal(t, tt.expectedTable, b.table, "expected table to be set correctly")
 			assert.Equal(t, b, result, "expected From() to return the same builder instance")
 		})
 	}
@@ -39,10 +69,9 @@ func TestBuilder_FromSafe(t *testing.T) {
 	t.Parallel()
 
 	whitelist := map[string]string{
-		"users":    "users",
-		"products": "products",
-		"orders":   "public.orders",
-		"items":    "items i",
+		"users":          "users",
+		"orders":         "public.orders",
+		"products_alias": "products p",
 	}
 
 	tests := []struct {
@@ -50,42 +79,49 @@ func TestBuilder_FromSafe(t *testing.T) {
 		userInput     string
 		whitelist     map[string]string
 		expectedTable string
-		expectedError string
+		expectedError error
 	}{
 		{
 			name:          "should set table from whitelist",
 			userInput:     "users",
 			whitelist:     whitelist,
 			expectedTable: "users",
-			expectedError: "",
+			expectedError: nil,
 		},
 		{
 			name:          "should set table with schema from whitelist",
 			userInput:     "orders",
 			whitelist:     whitelist,
 			expectedTable: "public.orders",
-			expectedError: "",
+			expectedError: nil,
 		},
 		{
 			name:          "should set table with alias from whitelist",
-			userInput:     "items",
+			userInput:     "products_alias",
 			whitelist:     whitelist,
-			expectedTable: "items i",
-			expectedError: "",
+			expectedTable: "products p",
+			expectedError: nil,
 		},
 		{
-			name:          "should return error for invalid table",
+			name:          "should return error for invalid user input",
 			userInput:     "invalid_table",
 			whitelist:     whitelist,
 			expectedTable: "",
-			expectedError: "invalid table: invalid_table",
+			expectedError: ErrInvalidTableInput,
+		},
+		{
+			name:          "should return error for empty user input",
+			userInput:     "",
+			whitelist:     whitelist,
+			expectedTable: "",
+			expectedError: ErrInvalidTableInput,
 		},
 		{
 			name:          "should return error for empty whitelist",
 			userInput:     "users",
 			whitelist:     map[string]string{},
 			expectedTable: "",
-			expectedError: "invalid table: users",
+			expectedError: ErrInvalidTableInput,
 		},
 	}
 
@@ -97,20 +133,44 @@ func TestBuilder_FromSafe(t *testing.T) {
 			b := &builder{}
 
 			// Act
-			result, err := b.FromSafe(tt.userInput, tt.whitelist)
+			result := b.FromSafe(tt.userInput, tt.whitelist)
 
 			// Assert
-			if tt.expectedError != "" {
-				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "error message should match")
-				assert.Nil(t, result, "expected nil builder on error")
-				assert.Empty(t, b.table, "expected table to be empty on error")
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
 				return
 			}
 
-			assert.NoError(t, err, "expected no error")
+			assert.NoError(t, b.err, "expected no error")
 			assert.Equal(t, tt.expectedTable, b.table, "expected table to be set correctly")
 			assert.Equal(t, b, result, "expected FromSafe() to return the same builder instance")
 		})
+	}
+}
+
+// -----------------
+// --- BENCHMARK ---
+// -----------------
+
+func BenchmarkBuilder_From(b *testing.B) {
+	builder := &builder{}
+	table := "users"
+
+	for b.Loop() {
+		builder.From(table)
+	}
+}
+
+func BenchmarkBuilder_FromSafe(b *testing.B) {
+	builder := &builder{}
+	userInput := "users"
+	whitelist := map[string]string{
+		"users":  "users",
+		"orders": "public.orders",
+	}
+
+	for b.Loop() {
+		builder.FromSafe(userInput, whitelist)
 	}
 }

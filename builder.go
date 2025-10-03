@@ -10,7 +10,7 @@ type QueryBuilder interface {
 	AddSelectSafe(userInput []string, whitelist map[string]string) QueryBuilder
 
 	From(table string) QueryBuilder
-	FromSafe(userInput string, whitelist map[string]string) (QueryBuilder, error)
+	FromSafe(userInput string, whitelist map[string]string) QueryBuilder
 	ToSQL() (string, []any, error)
 
 	// Where

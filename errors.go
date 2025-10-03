@@ -12,4 +12,5 @@ var (
 	ErrEmptyExpression   = errors.New("empty expression")
 	ErrNilFunc           = errors.New("nil function")
 	ErrTypeMismatch      = errors.New("type mismatch")
+	ErrInvalidTableInput = errors.New("invalid table input")
 )

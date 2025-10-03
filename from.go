@@ -1,7 +1,5 @@
 package sequel
 
-import "fmt"
-
 func (b *builder) From(table string) QueryBuilder {
 	if table == "" {
 		b.addErr(ErrEmptyTable)
@@ -12,11 +10,12 @@ func (b *builder) From(table string) QueryBuilder {
 	return b
 }
 
-func (b *builder) FromSafe(userInput string, whitelist map[string]string) (QueryBuilder, error) {
-	tbl, ok := whitelist[userInput]
+func (b *builder) FromSafe(userInput string, whitelist map[string]string) QueryBuilder {
+	table, ok := whitelist[userInput]
 	if !ok {
-		return nil, fmt.Errorf("invalid table: %s", userInput)
+		b.addErr(ErrInvalidTableInput)
+		return b
 	}
 
-	return b.From(tbl), nil
+	return b.From(table)
 }
