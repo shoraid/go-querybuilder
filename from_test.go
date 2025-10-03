@@ -215,6 +215,120 @@ func TestBuilder_FromSafe(t *testing.T) {
 	}
 }
 
+func TestBuilder_FromSub(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		initialTable  table
+		subQueryFn    func(QueryBuilder)
+		alias         string
+		expectedTable table
+		expectedError error
+	}{
+		{
+			name: "should set subquery table correctly",
+			subQueryFn: func(qb QueryBuilder) {
+				qb.Select("id", "name").From("users").Where("status", "=", "active")
+			},
+			alias: "active_users",
+			expectedTable: table{
+				queryType: QuerySub,
+				name:      "active_users",
+				sub: &builder{
+					columns: []column{
+						{queryType: QueryBasic, name: "id"},
+						{queryType: QueryBasic, name: "name"},
+					},
+					table: table{queryType: QueryBasic, name: "users"},
+					wheres: []where{
+						{queryType: QueryBasic, conj: "AND", column: "status", operator: "=", args: []any{"active"}},
+					},
+				},
+			},
+		},
+		{
+			name:         "should overwrite existing table with subquery",
+			initialTable: table{queryType: QueryBasic, name: "old_table"},
+			subQueryFn: func(qb QueryBuilder) {
+				qb.Select("name").From("products")
+			},
+			alias: "product_count",
+			expectedTable: table{
+				queryType: QuerySub,
+				name:      "product_count",
+				sub: &builder{
+					columns: []column{
+						{queryType: QueryBasic, name: "name"},
+					},
+					table: table{queryType: QueryBasic, name: "products"},
+				},
+			},
+		},
+		{
+			name:          "should return error for nil subquery function",
+			subQueryFn:    nil,
+			alias:         "sub",
+			expectedTable: table{},
+			expectedError: ErrNilFunc,
+		},
+		{
+			name:          "should return error for empty alias",
+			subQueryFn:    func(qb QueryBuilder) {},
+			alias:         "",
+			expectedTable: table{},
+			expectedError: ErrEmptyAlias,
+		},
+		{
+			name: "should propagate error from subquery builder",
+			subQueryFn: func(qb QueryBuilder) {
+				qb.From("") // This will cause an error in the sub-builder
+			},
+			alias:         "error_sub",
+			expectedTable: table{},
+			expectedError: ErrEmptyTable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				table:   tt.initialTable,
+			}
+
+			// Act
+			result := b.FromSub(tt.subQueryFn, tt.alias)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+				return
+			}
+
+			assert.NoError(t, b.err, "expected no error")
+
+			if tt.expectedTable.sub != nil {
+				// Compare sub-builder's internal state
+				expectedSubBuilder := tt.expectedTable.sub.(*builder)
+				actualSubBuilder := b.table.sub.(*builder)
+
+				assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "sub-builder columns mismatch")
+				assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "sub-builder table mismatch")
+				assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "sub-builder wheres mismatch")
+			} else {
+				assert.Nil(t, b.table.sub, "expected sub-builder to be nil")
+			}
+
+			assert.Equal(t, b, result, "expected FromSub() to return the same builder instance")
+		})
+	}
+}
+
 // -----------------
 // --- BENCHMARK ---
 // -----------------
@@ -250,5 +364,15 @@ func BenchmarkBuilder_FromSafe(b *testing.B) {
 
 	for b.Loop() {
 		builder.FromSafe(userInput, whitelist)
+	}
+}
+
+func BenchmarkBuilder_FromSub(b *testing.B) {
+	builder := &builder{dialect: PostgresDialect{}}
+
+	for b.Loop() {
+		builder.FromSub(func(qb QueryBuilder) {
+			qb.Select("id", "name").From("users").Where("status", "=", "active")
+		}, "active_users")
 	}
 }

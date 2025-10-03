@@ -5,6 +5,7 @@ import "errors"
 var (
 	ErrEmptyColumn       = errors.New("empty column")
 	ErrEmptyTable        = errors.New("empty table")
+	ErrEmptyAlias        = errors.New("empty alias")
 	ErrNoDialect         = errors.New("no dialect specified for builder")
 	ErrUnsupportedAction = errors.New("unsupported action")
 	ErrNilNotAllowed     = errors.New("nil values are not supported")

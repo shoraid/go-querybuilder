@@ -867,6 +867,113 @@ func TestPostgresDialect_FromSafe(t *testing.T) {
 	}
 }
 
+func TestPostgresDialect_FromSub(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError error
+	}{
+		{
+			name: "should build from subquery with alias",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("t.id", "t.name").
+					FromSub(func(qb QueryBuilder) {
+						qb.
+							Select("id", "name").
+							From("users").
+							Where("status", "=", "active")
+					}, "t")
+			},
+			expectedSQL:  `SELECT "t"."id", "t"."name" FROM (SELECT "id", "name" FROM "users" WHERE "status" = $1) AS "t"`,
+			expectedArgs: []any{"active"},
+		},
+		{
+			name: "should build from subquery with alias and additional where clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("t.id", "t.name").
+					FromSub(func(qb QueryBuilder) {
+						qb.
+							Select("id", "name").
+							From("users").
+							Where("status", "=", "active")
+					}, "t").
+					Where("t.id", ">", 10)
+			},
+			expectedSQL:  `SELECT "t"."id", "t"."name" FROM (SELECT "id", "name" FROM "users" WHERE "status" = $1) AS "t" WHERE "t"."id" > $2`,
+			expectedArgs: []any{"active", 10},
+		},
+		{
+			name: "should return error when subquery is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					FromSub(nil, "t")
+			},
+			expectedError: ErrNilFunc,
+		},
+		{
+			name: "should return error when alias is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					FromSub(func(qb QueryBuilder) {
+						qb.Select("id").From("users")
+					}, "")
+			},
+			expectedError: ErrEmptyAlias,
+		},
+		{
+			name: "should return error when subquery compilation fails",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					FromSub(func(qb QueryBuilder) {
+						qb.
+							Select("id").
+							From("") // This will cause an error
+					}, "t")
+			},
+			expectedError: ErrEmptyTable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
 func TestPostgresDialect_CompileSelect_AddSelect(t *testing.T) {
 	t.Parallel()
 

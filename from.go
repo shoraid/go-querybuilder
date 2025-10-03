@@ -38,3 +38,32 @@ func (b *builder) FromSafe(userInput string, whitelist map[string]string) QueryB
 
 	return b.From(table)
 }
+
+func (b *builder) FromSub(fn func(QueryBuilder), alias string) QueryBuilder {
+	if fn == nil {
+		b.addErr(ErrNilFunc)
+		return b
+	}
+
+	if alias == "" {
+		b.addErr(ErrEmptyAlias)
+		return b
+	}
+
+	subBuilder := New(b.dialect).(*builder)
+	fn(subBuilder)
+
+	// propagate child error
+	if subBuilder.err != nil {
+		b.addErr(subBuilder.err)
+		return b
+	}
+
+	b.table = table{
+		queryType: QuerySub,
+		sub:       subBuilder,
+		name:      alias,
+	}
+
+	return b
+}

@@ -97,7 +97,11 @@ func (d PostgresDialect) CompileSelect(b *builder) (string, []any, error) {
 
 	// FROM clause
 	sb.WriteString(" FROM ")
-	sb.WriteString(d.compileFromClause(b.table, &args))
+	fromClause, err := d.compileFromClause(b.table, &args)
+	if err != nil {
+		return "", nil, err
+	}
+	sb.WriteString(fromClause)
 
 	// WHERE clause (recursive)
 	if len(b.wheres) > 0 {
@@ -155,12 +159,12 @@ func (d PostgresDialect) compileSelectClause(columns []column, globalArgs *[]any
 	return sb.String()
 }
 
-func (d PostgresDialect) compileFromClause(table table, globalArgs *[]any) string {
+func (d PostgresDialect) compileFromClause(table table, globalArgs *[]any) (string, error) {
 	var sb strings.Builder
 
 	switch table.queryType {
 	case QueryBasic:
-		return d.WrapTable(table.name)
+		return d.WrapTable(table.name), nil
 
 	case QueryRaw:
 		expr := table.expr
@@ -169,9 +173,36 @@ func (d PostgresDialect) compileFromClause(table table, globalArgs *[]any) strin
 			*globalArgs = append(*globalArgs, arg)
 		}
 		sb.WriteString(expr)
+
+	case QuerySub:
+		subSQL, subArgs, err := table.sub.ToSQL()
+		if err != nil {
+			return "", err
+		}
+
+		// Renumber placeholders inside subquery SQL without collisions
+		base := len(*globalArgs) // number of args already present in the outer query
+		re := regexp.MustCompile(`\$(\d+)`)
+		subSQL = re.ReplaceAllStringFunc(subSQL, func(m string) string {
+			nStr := m[1:] // strip leading '$'
+			n, _ := strconv.Atoi(nStr)
+			return d.Placeholder(base + n) // shift by base
+		})
+
+		// Append subquery args in the same order
+		*globalArgs = append(*globalArgs, subArgs...)
+
+		sb.WriteString("(")
+		sb.WriteString(subSQL)
+		sb.WriteString(")")
+
+		if table.name != "" {
+			sb.WriteString(" AS ")
+			sb.WriteString(d.WrapIdentifier(table.name))
+		}
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 // Recursive WHERE compiler

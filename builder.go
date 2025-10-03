@@ -13,6 +13,7 @@ type QueryBuilder interface {
 	From(table string) QueryBuilder
 	FromRaw(expr string, args ...any) QueryBuilder
 	FromSafe(userInput string, whitelist map[string]string) QueryBuilder
+	FromSub(fn func(QueryBuilder), alias string) QueryBuilder
 	ToSQL() (string, []any, error)
 
 	// Where
@@ -84,6 +85,7 @@ type table struct {
 	name      string
 	expr      string
 	args      []any
+	sub       QueryBuilder
 }
 
 type orderBy struct {

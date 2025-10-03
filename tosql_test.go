@@ -117,6 +117,28 @@ func TestBuilder_ToSQL(t *testing.T) {
 			},
 			expectedError: ErrEmptyTable,
 		},
+		{
+			name: "should return error from subquery if present",
+			builder: builder{
+				dialect: PostgresDialect{},
+				action:  "select",
+				table: table{
+					queryType: QuerySub,
+					name:      "users",
+					sub: &builder{
+						dialect: PostgresDialect{},
+						action:  "select",
+						table:   table{}, // This will cause ErrEmptyTable
+						limit:   -1,
+						offset:  -1,
+						err:     ErrEmptyTable, // pre-existing error
+					},
+				},
+				limit:  -1,
+				offset: -1,
+			},
+			expectedError: ErrEmptyTable,
+		},
 	}
 
 	for _, tt := range tests {
