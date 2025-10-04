@@ -46,6 +46,39 @@ func (b *builder) SelectSafe(userInput []string, whitelist map[string]string) Qu
 	return b
 }
 
+func (b *builder) SelectSub(fn func(QueryBuilder), alias string) QueryBuilder {
+	b.action = "select"
+
+	if fn == nil {
+		b.addErr(ErrNilFunc)
+		return b
+	}
+
+	if alias == "" {
+		b.addErr(ErrEmptyAlias)
+		return b
+	}
+
+	subBuilder := New(b.dialect).(*builder)
+	subBuilder.action = "select"
+	fn(subBuilder)
+
+	// propagate child error
+	if subBuilder.err != nil {
+		b.addErr(subBuilder.err)
+		return b
+	}
+
+	// Reset columns
+	b.columns = []column{{
+		queryType: QuerySub,
+		sub:       subBuilder,
+		name:      alias,
+	}}
+
+	return b
+}
+
 func (b *builder) AddSelect(columns ...string) QueryBuilder {
 	if len(columns) == 0 {
 		return b
@@ -106,6 +139,36 @@ func (b *builder) AddSelectSafe(userInput []string, whitelist map[string]string)
 			existing[col] = struct{}{}
 		}
 	}
+
+	return b
+}
+
+func (b *builder) AddSelectSub(fn func(QueryBuilder), alias string) QueryBuilder {
+	if fn == nil {
+		b.addErr(ErrNilFunc)
+		return b
+	}
+
+	if alias == "" {
+		b.addErr(ErrEmptyAlias)
+		return b
+	}
+
+	subBuilder := New(b.dialect).(*builder)
+	subBuilder.action = "select"
+	fn(subBuilder)
+
+	// propagate child error
+	if subBuilder.err != nil {
+		b.addErr(subBuilder.err)
+		return b
+	}
+
+	b.columns = append(b.columns, column{
+		queryType: QuerySub,
+		sub:       subBuilder,
+		name:      alias,
+	})
 
 	return b
 }

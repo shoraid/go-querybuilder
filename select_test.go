@@ -242,6 +242,126 @@ func TestBuilder_SelectSafe(t *testing.T) {
 	}
 }
 
+func TestBuilder_SelectSub(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		initialColumns  []column
+		subQueryFn      func(QueryBuilder)
+		alias           string
+		expectedAction  string
+		expectedColumns []column
+		expectedError   error
+	}{
+		{
+			name: "should set subquery as a column",
+			subQueryFn: func(qb QueryBuilder) {
+				qb.Select("COUNT(*)").From("orders").Where("user_id", "=", 1)
+			},
+			alias:          "order_count",
+			expectedAction: "select",
+			expectedColumns: []column{
+				{
+					queryType: QuerySub,
+					name:      "order_count",
+					sub: &builder{
+						action:  "select",
+						columns: []column{{queryType: QueryBasic, name: "COUNT(*)"}},
+						table:   table{queryType: QueryBasic, name: "orders"},
+						wheres:  []where{{queryType: QueryBasic, conj: "AND", column: "user_id", operator: "=", args: []any{1}}},
+					},
+				},
+			},
+		},
+		{
+			name: "should reset columns when called again with subquery",
+			initialColumns: []column{
+				{queryType: QueryBasic, name: "dummy"},
+			},
+			subQueryFn: func(qb QueryBuilder) {
+				qb.Select("MAX(created_at)").From("users")
+			},
+			alias:          "latest_user",
+			expectedAction: "select",
+			expectedColumns: []column{
+				{
+					queryType: QuerySub,
+					name:      "latest_user",
+					sub: &builder{
+						action:  "select",
+						columns: []column{{queryType: QueryBasic, name: "MAX(created_at)"}},
+						table:   table{queryType: QueryBasic, name: "users"},
+					},
+				},
+			},
+		},
+		{
+			name:            "should return error for nil subquery function",
+			subQueryFn:      nil,
+			alias:           "sub",
+			expectedAction:  "select",
+			expectedColumns: []column{},
+			expectedError:   ErrNilFunc,
+		},
+		{
+			name:            "should return error for empty alias",
+			subQueryFn:      func(qb QueryBuilder) {},
+			alias:           "",
+			expectedAction:  "select",
+			expectedColumns: []column{},
+			expectedError:   ErrEmptyAlias,
+		},
+		{
+			name: "should propagate error from subquery builder",
+			subQueryFn: func(qb QueryBuilder) {
+				qb.SelectRaw("") // This will cause an error in the sub-builder
+			},
+			alias:           "error_sub",
+			expectedAction:  "select",
+			expectedColumns: []column{},
+			expectedError:   ErrEmptyExpression,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{columns: tt.initialColumns}
+
+			// Act
+			result := b.SelectSub(tt.subQueryFn, tt.alias)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+				return
+			}
+
+			assert.NoError(t, b.err, "expected no error")
+			assert.Equal(t, tt.expectedAction, b.action, "expected action to be set to select")
+
+			if tt.expectedColumns[0].sub != nil {
+				// Compare sub-builder's internal state
+				expectedSubBuilder := tt.expectedColumns[0].sub.(*builder)
+				actualSubBuilder := b.columns[0].sub.(*builder)
+
+				assert.Equal(t, expectedSubBuilder.action, actualSubBuilder.action, "sub-builder action mismatch")
+				assert.Equal(t, expectedSubBuilder.columns, actualSubBuilder.columns, "sub-builder columns mismatch")
+				assert.Equal(t, expectedSubBuilder.table, actualSubBuilder.table, "sub-builder table mismatch")
+				assert.Equal(t, expectedSubBuilder.wheres, actualSubBuilder.wheres, "sub-builder wheres mismatch")
+			} else {
+				assert.Nil(t, b.columns[0].sub, "expected sub-builder to be nil")
+			}
+
+			assert.Equal(t, b, result, "expected SelectSub to return the same builder instance")
+		})
+	}
+}
+
 func TestBuilder_AddSelect(t *testing.T) {
 	t.Parallel()
 
@@ -519,6 +639,123 @@ func TestBuilder_AddSelectSafe(t *testing.T) {
 	}
 }
 
+func TestBuilder_AddSelectSub(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		initialColumns  []column
+		subQueryFn      func(QueryBuilder)
+		alias           string
+		expectedColumns []column
+		expectedError   error
+	}{
+		{
+			name:           "should add subquery as a column to empty list",
+			initialColumns: []column{},
+			subQueryFn: func(qb QueryBuilder) {
+				qb.Select("COUNT(*)").From("orders").Where("user_id", "=", 1)
+			},
+			alias: "order_count",
+			expectedColumns: []column{
+				{
+					queryType: QuerySub,
+					name:      "order_count",
+					sub: &builder{
+						action:  "select",
+						columns: []column{{queryType: QueryBasic, name: "COUNT(*)"}},
+						table:   table{queryType: QueryBasic, name: "orders"},
+						wheres:  []where{{queryType: QueryBasic, conj: "AND", column: "user_id", operator: "=", args: []any{1}}},
+						limit:   -1,
+						offset:  -1,
+					},
+				},
+			},
+		},
+		{
+			name: "should add subquery as a column to existing list",
+			initialColumns: []column{
+				{queryType: QueryBasic, name: "id"},
+				{queryType: QueryBasic, name: "name"},
+			},
+			subQueryFn: func(qb QueryBuilder) {
+				qb.Select("MAX(created_at)").From("users")
+			},
+			alias: "latest_user",
+			expectedColumns: []column{
+				{queryType: QueryBasic, name: "id"},
+				{queryType: QueryBasic, name: "name"},
+				{
+					queryType: QuerySub,
+					name:      "latest_user",
+					sub: &builder{
+						action:  "select",
+						columns: []column{{queryType: QueryBasic, name: "MAX(created_at)"}},
+						table:   table{queryType: QueryBasic, name: "users"},
+						limit:   -1,
+						offset:  -1,
+					},
+				},
+			},
+		},
+		{
+			name:            "should return error for nil subquery function",
+			initialColumns:  []column{{queryType: QueryBasic, name: "id"}},
+			subQueryFn:      nil,
+			alias:           "sub",
+			expectedColumns: []column{{queryType: QueryBasic, name: "id"}},
+			expectedError:   ErrNilFunc,
+		},
+		{
+			name: "should return error for empty alias",
+			initialColumns: []column{
+				{queryType: QueryBasic, name: "id"},
+			},
+			subQueryFn: func(qb QueryBuilder) {
+				qb.Select("id").From("users")
+			},
+			alias:           "",
+			expectedColumns: []column{{queryType: QueryBasic, name: "id"}},
+			expectedError:   ErrEmptyAlias,
+		},
+		{
+			name: "should propagate error from subquery builder",
+			initialColumns: []column{
+				{queryType: QueryBasic, name: "id"},
+			},
+			subQueryFn: func(qb QueryBuilder) {
+				qb.SelectRaw("") // This will cause an error in the sub-builder
+			},
+			alias:           "error_sub",
+			expectedColumns: []column{{queryType: QueryBasic, name: "id"}},
+			expectedError:   ErrEmptyExpression,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{columns: tt.initialColumns}
+
+			// Act
+			result := b.AddSelectSub(tt.subQueryFn, tt.alias)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedError, "expected error message to match")
+				return
+			}
+
+			assert.NoError(t, b.err, "expected no error")
+			assert.Equal(t, tt.expectedColumns, b.columns, "expected columns to be updated correctly")
+			assert.Equal(t, b, result, "expected AddSelectSub to return the same builder instance")
+		})
+	}
+}
+
 //------------------
 // --- BENCHMARK ---
 //------------------
@@ -584,6 +821,18 @@ func BenchmarkBuilder_SelectSafe(b *testing.B) {
 
 	for b.Loop() {
 		builder.SelectSafe(userInput, whitelist)
+	}
+}
+
+func BenchmarkBuilder_SelectSub(b *testing.B) {
+	builder := &builder{}
+	subQueryFn := func(qb QueryBuilder) {
+		qb.Select("COUNT(*)").From("orders").Where("user_id", "=", 1)
+	}
+	alias := "order_count"
+
+	for b.Loop() {
+		builder.SelectSub(subQueryFn, alias)
 	}
 }
 
@@ -660,5 +909,23 @@ func BenchmarkBuilder_AddSelectSafe(b *testing.B) {
 
 	for b.Loop() {
 		builder.AddSelectSafe(userInput, whitelist)
+	}
+}
+
+func BenchmarkBuilder_AddSelectSub(b *testing.B) {
+	initialColumns := []column{
+		{queryType: QueryBasic, name: "id"},
+		{queryType: QueryBasic, name: "name"},
+		{queryType: QueryBasic, name: "email"},
+	}
+	builder := &builder{columns: initialColumns}
+
+	subQueryFn := func(qb QueryBuilder) {
+		qb.Select("MAX(created_at)").From("users")
+	}
+	alias := "latest_user"
+
+	for b.Loop() {
+		builder.AddSelectSub(subQueryFn, alias)
 	}
 }

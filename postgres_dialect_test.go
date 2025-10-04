@@ -556,6 +556,95 @@ func TestPostgresDialect_SelectSafe(t *testing.T) {
 	}
 }
 
+func TestPostgresDialect_SelectSub(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		build        func(*builder) QueryBuilder
+		expectedSQL  string
+		expectedArgs []any
+		expectedErr  error
+	}{
+		{
+			name: "should build select with subquery",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					SelectSub(func(qb QueryBuilder) {
+						qb.
+							Select("id").
+							From("users").
+							Where("status", "=", "active")
+					}, "active_user_ids").
+					From("posts")
+			},
+			expectedSQL:  `SELECT (SELECT "id" FROM "users" WHERE "status" = $1) AS "active_user_ids" FROM "posts"`,
+			expectedArgs: []any{"active"},
+		},
+		{
+			name: "should return error when subquery is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					SelectSub(nil, "alias").
+					From("posts")
+			},
+			expectedErr: ErrNilFunc,
+		},
+		{
+			name: "should return error when alias is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					SelectSub(func(qb QueryBuilder) {
+						qb.Select("id").From("users")
+					}, "").
+					From("posts")
+			},
+			expectedErr: ErrEmptyAlias,
+		},
+		{
+			name: "should return error when subquery compilation returns error",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					SelectSub(func(qb QueryBuilder) {
+						qb.Select("id").From("") // This will cause an error
+					}, "alias").
+					From("posts")
+			},
+			expectedErr: ErrEmptyTable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedErr != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedErr, "expected error to match")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
 func TestPostgresDialect_AddSelect(t *testing.T) {
 	t.Parallel()
 
@@ -819,6 +908,114 @@ func TestPostgresDialect_AddSelectSafe(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_AddSelectSub(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		build        func(*builder) QueryBuilder
+		expectedSQL  string
+		expectedArgs []any
+		expectedErr  error
+	}{
+		{
+			name: "should add select with subquery",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("posts.id").
+					AddSelectSub(func(qb QueryBuilder) {
+						qb.
+							SelectRaw("COUNT(*)").
+							From("comments").
+							WhereRaw(`"post_id" = "posts"."id"`)
+					}, "comment_count").
+					From("posts")
+			},
+			expectedSQL:  `SELECT "posts"."id", (SELECT COUNT(*) FROM "comments" WHERE "post_id" = "posts"."id") AS "comment_count" FROM "posts"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should add select with subquery to an empty select",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					AddSelectSub(func(qb QueryBuilder) {
+						qb.
+							Select("id").
+							From("users").
+							Where("status", "=", "active")
+					}, "active_user_ids").
+					From("posts")
+			},
+			expectedSQL:  `SELECT (SELECT "id" FROM "users" WHERE "status" = $1) AS "active_user_ids" FROM "posts"`,
+			expectedArgs: []any{"active"},
+		},
+		{
+			name: "should return error when subquery is nil",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelectSub(nil, "alias").
+					From("posts")
+			},
+			expectedErr: ErrNilFunc,
+		},
+		{
+			name: "should return error when alias is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelectSub(func(qb QueryBuilder) {
+						qb.Select("id").From("users")
+					}, "").
+					From("posts")
+			},
+			expectedErr: ErrEmptyAlias,
+		},
+		{
+			name: "should return error when subquery compilation returns error",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelectSub(func(qb QueryBuilder) {
+						qb.Select("id").From("") // This will cause an error
+					}, "alias").
+					From("posts")
+			},
+			expectedErr: ErrEmptyTable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedErr != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedErr, "expected error to match")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
 			assert.NoError(t, err, "expected no error")
 			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
 			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
@@ -5121,6 +5318,39 @@ func BenchmarkPostgresDialect_SelectSafe(b *testing.B) {
 	}
 }
 
+func BenchmarkPostgresDialect_SelectSub(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "simple select subquery",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					SelectSub(func(qb QueryBuilder) {
+						qb.SelectRaw("COUNT(*)").From("orders").WhereRaw("orders.user_id = users.id")
+					}, "order_count").
+					From("users")
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				builder := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(builder)
+				_, _, _ = builder.dialect.CompileSelect(builder)
+			}
+		})
+	}
+}
+
 func BenchmarkPostgresDialect_AddSelect(b *testing.B) {
 	benchmarks := []struct {
 		name  string
@@ -5229,6 +5459,40 @@ func BenchmarkPostgresDialect_AddSelectSafe(b *testing.B) {
 				return b.
 					Select("id").
 					AddSelectSafe(userInput, whitelist).
+					From("users")
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				builder := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(builder)
+				_, _, _ = builder.dialect.CompileSelect(builder)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_AddSelectSub(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "add select subquery to existing select",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelectSub(func(qb QueryBuilder) {
+						qb.SelectRaw("COUNT(*)").From("orders").WhereRaw("orders.user_id = users.id")
+					}, "order_count").
 					From("users")
 			},
 		},

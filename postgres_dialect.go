@@ -93,7 +93,11 @@ func (d PostgresDialect) CompileSelect(b *builder) (string, []any, error) {
 
 	// SELECT clause
 	sb.WriteString("SELECT ")
-	sb.WriteString(d.compileSelectClause(b.columns, &args))
+	selectClause, err := d.compileSelectClause(b.columns, &args)
+	if err != nil {
+		return "", nil, err
+	}
+	sb.WriteString(selectClause)
 
 	// FROM clause
 	sb.WriteString(" FROM ")
@@ -131,7 +135,7 @@ func (d PostgresDialect) CompileSelect(b *builder) (string, []any, error) {
 	return sb.String(), args, nil
 }
 
-func (d PostgresDialect) compileSelectClause(columns []column, globalArgs *[]any) string {
+func (d PostgresDialect) compileSelectClause(columns []column, globalArgs *[]any) (string, error) {
 	var sb strings.Builder
 
 	if len(columns) == 0 {
@@ -152,11 +156,35 @@ func (d PostgresDialect) compileSelectClause(columns []column, globalArgs *[]any
 					*globalArgs = append(*globalArgs, arg)
 				}
 				sb.WriteString(expr)
+
+			case QuerySub:
+				subSQL, subArgs, err := col.sub.ToSQL()
+				if err != nil {
+					return "", err
+				}
+
+				// Renumber placeholders inside subquery SQL without collisions
+				base := len(*globalArgs) // number of args already present in the outer query
+				re := regexp.MustCompile(`\$(\d+)`)
+				subSQL = re.ReplaceAllStringFunc(subSQL, func(m string) string {
+					nStr := m[1:] // strip leading '$'
+					n, _ := strconv.Atoi(nStr)
+					return d.Placeholder(base + n) // shift by base
+				})
+
+				// Append subquery args in the same order
+				*globalArgs = append(*globalArgs, subArgs...)
+
+				sb.WriteString("(")
+				sb.WriteString(subSQL)
+				sb.WriteString(")")
+				sb.WriteString(" AS ")
+				sb.WriteString(d.WrapIdentifier(col.name))
 			}
 		}
 	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 func (d PostgresDialect) compileFromClause(table table, globalArgs *[]any) (string, error) {

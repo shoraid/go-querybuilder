@@ -5,9 +5,12 @@ type QueryBuilder interface {
 	Select(columns ...string) QueryBuilder
 	SelectRaw(expr string, args ...any) QueryBuilder
 	SelectSafe(userInput []string, whitelist map[string]string) QueryBuilder
+	SelectSub(fn func(QueryBuilder), alias string) QueryBuilder
+
 	AddSelect(columns ...string) QueryBuilder
 	AddSelectRaw(expr string, args ...any) QueryBuilder
 	AddSelectSafe(userInput []string, whitelist map[string]string) QueryBuilder
+	AddSelectSub(fn func(QueryBuilder), alias string) QueryBuilder
 
 	// From
 	From(table string) QueryBuilder
@@ -78,6 +81,7 @@ type column struct {
 	name      string
 	expr      string
 	args      []any
+	sub       QueryBuilder
 }
 
 type table struct {

@@ -98,13 +98,13 @@ func TestBuilder_ToSQL(t *testing.T) {
 			expectedError: ErrEmptyColumn,
 		},
 		{
-			name: "should return error from builder if present",
+			name: "should return error from select subquery if present",
 			builder: builder{
 				dialect: PostgresDialect{},
 				action:  "select",
-				wheres: []where{
+				columns: []column{
 					{
-						queryType: QuerySub, column: "", operator: "EXISTS", args: []any{}, sub: &builder{
+						queryType: QuerySub, name: "order_count", args: []any{}, sub: &builder{
 							dialect: PostgresDialect{},
 							action:  "select",
 							table:   table{}, // This will cause ErrEmptyTable
@@ -118,7 +118,7 @@ func TestBuilder_ToSQL(t *testing.T) {
 			expectedError: ErrEmptyTable,
 		},
 		{
-			name: "should return error from subquery if present",
+			name: "should return error from table subquery if present",
 			builder: builder{
 				dialect: PostgresDialect{},
 				action:  "select",
@@ -136,6 +136,26 @@ func TestBuilder_ToSQL(t *testing.T) {
 				},
 				limit:  -1,
 				offset: -1,
+			},
+			expectedError: ErrEmptyTable,
+		},
+		{
+			name: "should return error from where subquery if present",
+			builder: builder{
+				dialect: PostgresDialect{},
+				action:  "select",
+				wheres: []where{
+					{
+						queryType: QuerySub, column: "", operator: "EXISTS", args: []any{}, sub: &builder{
+							dialect: PostgresDialect{},
+							action:  "select",
+							table:   table{}, // This will cause ErrEmptyTable
+							limit:   -1,
+							offset:  -1,
+							err:     ErrEmptyTable, // pre-existing error
+						},
+					},
+				},
 			},
 			expectedError: ErrEmptyTable,
 		},
