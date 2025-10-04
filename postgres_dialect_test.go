@@ -318,15 +318,14 @@ func TestPostgresDialect_WrapTable(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_Select(t *testing.T) {
+func TestPostgresDialect_Select(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		build         func(*builder) QueryBuilder
-		expectedSQL   string
-		expectedArgs  []any
-		expectedError error
+		name         string
+		build        func(*builder) QueryBuilder
+		expectedSQL  string
+		expectedArgs []any
 	}{
 		{
 			name: "should build select all query when columns are empty",
@@ -378,17 +377,6 @@ func TestPostgresDialect_CompileSelect_Select(t *testing.T) {
 			expectedSQL:  `SELECT "id", "COUNT(*)", "SUM(orders"."price)" AS "total_price" FROM "orders"`,
 			expectedArgs: []any{},
 		},
-		{
-			name: "should return error when table is empty",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select().
-					From("")
-			},
-			expectedSQL:   "",
-			expectedArgs:  []any{},
-			expectedError: ErrEmptyTable,
-		},
 	}
 
 	for _, tt := range tests {
@@ -407,14 +395,6 @@ func TestPostgresDialect_CompileSelect_Select(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != nil {
-				assert.Error(t, err, "expected an error")
-				assert.ErrorIs(t, err, tt.expectedError, "expected error to match")
-				assert.Empty(t, sql, "expected empty SQL on error")
-				assert.Empty(t, args, "expected empty args on error")
-				return
-			}
-
 			assert.NoError(t, err, "expected no error")
 			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
 			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
@@ -422,7 +402,7 @@ func TestPostgresDialect_CompileSelect_Select(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_SelectRaw(t *testing.T) {
+func TestPostgresDialect_SelectRaw(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -430,6 +410,7 @@ func TestPostgresDialect_CompileSelect_SelectRaw(t *testing.T) {
 		build        func(*builder) QueryBuilder
 		expectedSQL  string
 		expectedArgs []any
+		expectedErr  error
 	}{
 		{
 			name: "should build raw select expression without args",
@@ -442,24 +423,23 @@ func TestPostgresDialect_CompileSelect_SelectRaw(t *testing.T) {
 			expectedArgs: []any{},
 		},
 		{
-			name: "should build raw select expression with single arg",
+			name: "should build raw select expression with mixed args",
 			build: func(b *builder) QueryBuilder {
 				return b.
-					SelectRaw("DATE(timestamp) > ? AS log_date", "2025-01-01").
-					From("logs")
+					SelectRaw("id, name, ? AS status, ? AS type", "active", 1).
+					From("users")
 			},
-			expectedSQL:  `SELECT DATE(timestamp) > $1 AS log_date FROM "logs"`,
-			expectedArgs: []any{"2025-01-01"},
+			expectedSQL:  `SELECT id, name, $1 AS status, $2 AS type FROM "users"`,
+			expectedArgs: []any{"active", 1},
 		},
 		{
-			name: "should build raw select expression with multiple args",
+			name: "should return error when raw expression is empty",
 			build: func(b *builder) QueryBuilder {
 				return b.
-					SelectRaw("value BETWEEN ? AND ? AS range_check", 10, 20).
-					From("metrics")
+					SelectRaw("").
+					From("users")
 			},
-			expectedSQL:  `SELECT value BETWEEN $1 AND $2 AS range_check FROM "metrics"`,
-			expectedArgs: []any{10, 20},
+			expectedErr: ErrEmptyExpression,
 		},
 	}
 
@@ -479,6 +459,14 @@ func TestPostgresDialect_CompileSelect_SelectRaw(t *testing.T) {
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
+			if tt.expectedErr != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedErr, "expected error to match")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
 			assert.NoError(t, err, "expected no error")
 			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
 			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
@@ -486,7 +474,7 @@ func TestPostgresDialect_CompileSelect_SelectRaw(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_SelectSafe(t *testing.T) {
+func TestPostgresDialect_SelectSafe(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -541,6 +529,276 @@ func TestPostgresDialect_CompileSelect_SelectSafe(t *testing.T) {
 					From("users")
 			},
 			expectedSQL:  `SELECT "id" FROM "users"`,
+			expectedArgs: []any{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_AddSelect(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		build        func(*builder) QueryBuilder
+		expectedSQL  string
+		expectedArgs []any
+	}{
+		{
+			name: "should add a single column to select",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelect("name").
+					From("users")
+			},
+			expectedSQL:  `SELECT "id", "name" FROM "users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should add multiple columns to select",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelect("name", "email").
+					AddSelect("age").
+					From("users")
+			},
+			expectedSQL:  `SELECT "id", "name", "email", "age" FROM "users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should add alias column to select",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("u.id").
+					AddSelect("u.name AS user_name").
+					From("users u")
+			},
+			expectedSQL:  `SELECT "u"."id", "u"."name" AS "user_name" FROM "users" AS "u"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should add select expression to an empty select",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					AddSelect("email").
+					From("users")
+			},
+			expectedSQL:  `SELECT "email" FROM "users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should add wrapped aggregate function (current query builder behavior)",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					AddSelect("COUNT(*)", "SUM(orders.price) as total_price").
+					From("orders")
+			},
+			expectedSQL:  `SELECT "COUNT(*)", "SUM(orders"."price)" AS "total_price" FROM "orders"`,
+			expectedArgs: []any{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_AddSelectRaw(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		build        func(*builder) QueryBuilder
+		expectedSQL  string
+		expectedArgs []any
+		expectedErr  error
+	}{
+		{
+			name: "should add raw select expression",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelectRaw("COUNT(*) AS total").
+					From("users")
+			},
+			expectedSQL:  `SELECT "id", COUNT(*) AS total FROM "users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should add multiple raw select expressions with multiple args",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelectRaw("DATE(created_at) > ?", "2023-01-01").
+					AddSelectRaw("EXTRACT(YEAR FROM created_at) BETWEEN ? AND ?", 2020, 2023).
+					From("users")
+			},
+			expectedSQL:  `SELECT "id", DATE(created_at) > $1, EXTRACT(YEAR FROM created_at) BETWEEN $2 AND $3 FROM "users"`,
+			expectedArgs: []any{"2023-01-01", 2020, 2023},
+		},
+		{
+			name: "should add raw select expression to an empty select",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					AddSelectRaw("COUNT(*) AS total").
+					From("users")
+			},
+			expectedSQL:  `SELECT COUNT(*) AS total FROM "users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should return error when raw expression is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelectRaw("").
+					From("users")
+			},
+			expectedErr: ErrEmptyExpression,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedErr != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedErr, "expected error to match")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_AddSelectSafe(t *testing.T) {
+	tests := []struct {
+		name         string
+		build        func(*builder) QueryBuilder
+		expectedSQL  string
+		expectedArgs []any
+	}{
+		{
+			name: "should add safe select expression",
+			build: func(b *builder) QueryBuilder {
+				userInput := []string{"name"}
+				whitelist := map[string]string{
+					"id":   "id",
+					"name": "name",
+				}
+
+				return b.
+					Select("id").
+					AddSelectSafe(userInput, whitelist).
+					From("users")
+			},
+			expectedSQL:  `SELECT "id", "name" FROM "users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should add safe select expression with alias",
+			build: func(b *builder) QueryBuilder {
+				userInput := []string{"email"}
+				whitelist := map[string]string{
+					"email": "u.email",
+				}
+
+				return b.
+					Select("u.id").
+					AddSelectSafe(userInput, whitelist).
+					From("users u")
+			},
+			expectedSQL:  `SELECT "u"."id", "u"."email" FROM "users" AS "u"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should ignore inputs not in whitelist when adding safe select",
+			build: func(b *builder) QueryBuilder {
+				userInput := []string{"not_allowed", "name"}
+				whitelist := map[string]string{
+					"name": "name",
+				}
+
+				return b.
+					Select("id").
+					AddSelectSafe(userInput, whitelist).
+					From("users")
+			},
+			expectedSQL:  `SELECT "id", "name" FROM "users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should add safe select expression to an empty select",
+			build: func(b *builder) QueryBuilder {
+				userInput := []string{"name"}
+				whitelist := map[string]string{
+					"name": "name",
+				}
+
+				return b.
+					AddSelectSafe(userInput, whitelist).
+					From("users")
+			},
+			expectedSQL:  `SELECT "name" FROM "users"`,
 			expectedArgs: []any{},
 		},
 	}
@@ -967,268 +1225,6 @@ func TestPostgresDialect_FromSub(t *testing.T) {
 				return
 			}
 
-			assert.NoError(t, err, "expected no error")
-			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
-			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
-		})
-	}
-}
-
-func TestPostgresDialect_CompileSelect_AddSelect(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name         string
-		build        func(*builder) QueryBuilder
-		expectedSQL  string
-		expectedArgs []any
-	}{
-		{
-			name: "should add a single column to select",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select("id").
-					AddSelect("name").
-					From("users")
-			},
-			expectedSQL:  `SELECT "id", "name" FROM "users"`,
-			expectedArgs: []any{},
-		},
-		{
-			name: "should add multiple columns to select",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select("id").
-					AddSelect("name", "email").
-					AddSelect("age").
-					From("users")
-			},
-			expectedSQL:  `SELECT "id", "name", "email", "age" FROM "users"`,
-			expectedArgs: []any{},
-		},
-		{
-			name: "should add alias column to select",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select("u.id").
-					AddSelect("u.name AS user_name").
-					From("users u")
-			},
-			expectedSQL:  `SELECT "u"."id", "u"."name" AS "user_name" FROM "users" AS "u"`,
-			expectedArgs: []any{},
-		},
-		{
-			name: "should add select expression to an empty select",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					AddSelect("email").
-					From("users")
-			},
-			expectedSQL:  `SELECT "email" FROM "users"`,
-			expectedArgs: []any{},
-		},
-		{
-			name: "should add wrapped aggregate function (current query builder behavior)",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					AddSelect("COUNT(*)", "SUM(orders.price) as total_price").
-					From("orders")
-			},
-			expectedSQL:  `SELECT "COUNT(*)", "SUM(orders"."price)" AS "total_price" FROM "orders"`,
-			expectedArgs: []any{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			// Arrange
-			b := &builder{
-				dialect: PostgresDialect{},
-				limit:   -1,
-				offset:  -1,
-			}
-			tt.build(b)
-
-			// Act
-			sql, args, err := b.dialect.CompileSelect(b)
-
-			// Assert
-			assert.NoError(t, err, "expected no error")
-			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
-			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
-		})
-	}
-}
-
-func TestPostgresDialect_CompileSelect_AddSelectRaw(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name         string
-		build        func(*builder) QueryBuilder
-		expectedSQL  string
-		expectedArgs []any
-	}{
-		{
-			name: "should add raw select expression",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select("id").
-					AddSelectRaw("COUNT(*) AS total").
-					From("users")
-			},
-			expectedSQL:  `SELECT "id", COUNT(*) AS total FROM "users"`,
-			expectedArgs: []any{},
-		},
-		{
-			name: "should add raw select expression with args",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select("id").
-					AddSelectRaw("DATE(created_at) > ?", "2023-01-01").
-					From("users")
-			},
-			expectedSQL:  `SELECT "id", DATE(created_at) > $1 FROM "users"`,
-			expectedArgs: []any{"2023-01-01"},
-		},
-		{
-			name: "should add multiple raw select expressions with multiple args",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					Select("id").
-					AddSelectRaw("DATE(created_at) > ?", "2023-01-01").
-					AddSelectRaw("EXTRACT(YEAR FROM created_at) BETWEEN ? AND ?", 2020, 2023).
-					From("users")
-			},
-			expectedSQL:  `SELECT "id", DATE(created_at) > $1, EXTRACT(YEAR FROM created_at) BETWEEN $2 AND $3 FROM "users"`,
-			expectedArgs: []any{"2023-01-01", 2020, 2023},
-		},
-		{
-			name: "should add raw select expression to an empty select",
-			build: func(b *builder) QueryBuilder {
-				return b.
-					AddSelectRaw("COUNT(*) AS total").
-					From("users")
-			},
-			expectedSQL:  `SELECT COUNT(*) AS total FROM "users"`,
-			expectedArgs: []any{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			// Arrange
-			b := &builder{
-				dialect: PostgresDialect{},
-				limit:   -1,
-				offset:  -1,
-			}
-			tt.build(b)
-
-			// Act
-			sql, args, err := b.dialect.CompileSelect(b)
-
-			// Assert
-			assert.NoError(t, err, "expected no error")
-			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
-			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
-		})
-	}
-}
-
-func TestPostgresDialect_CompileSelect_AddSelectSafe(t *testing.T) {
-	tests := []struct {
-		name         string
-		build        func(*builder) QueryBuilder
-		expectedSQL  string
-		expectedArgs []any
-	}{
-		{
-			name: "should add safe select expression",
-			build: func(b *builder) QueryBuilder {
-				userInput := []string{"name"}
-				whitelist := map[string]string{
-					"id":   "id",
-					"name": "name",
-				}
-
-				return b.
-					Select("id").
-					AddSelectSafe(userInput, whitelist).
-					From("users")
-			},
-			expectedSQL:  `SELECT "id", "name" FROM "users"`,
-			expectedArgs: []any{},
-		},
-		{
-			name: "should add safe select expression with alias",
-			build: func(b *builder) QueryBuilder {
-				userInput := []string{"email"}
-				whitelist := map[string]string{
-					"email": "u.email",
-				}
-
-				return b.
-					Select("u.id").
-					AddSelectSafe(userInput, whitelist).
-					From("users u")
-			},
-			expectedSQL:  `SELECT "u"."id", "u"."email" FROM "users" AS "u"`,
-			expectedArgs: []any{},
-		},
-		{
-			name: "should ignore inputs not in whitelist when adding safe select",
-			build: func(b *builder) QueryBuilder {
-				userInput := []string{"not_allowed", "name"}
-				whitelist := map[string]string{
-					"name": "name",
-				}
-
-				return b.
-					Select("id").
-					AddSelectSafe(userInput, whitelist).
-					From("users")
-			},
-			expectedSQL:  `SELECT "id", "name" FROM "users"`,
-			expectedArgs: []any{},
-		},
-		{
-			name: "should add safe select expression to an empty select",
-			build: func(b *builder) QueryBuilder {
-				userInput := []string{"name"}
-				whitelist := map[string]string{
-					"name": "name",
-				}
-
-				return b.
-					AddSelectSafe(userInput, whitelist).
-					From("users")
-			},
-			expectedSQL:  `SELECT "name" FROM "users"`,
-			expectedArgs: []any{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			// Arrange
-			b := &builder{
-				dialect: PostgresDialect{},
-				limit:   -1,
-				offset:  -1,
-			}
-			tt.build(b)
-
-			// Act
-			sql, args, err := b.dialect.CompileSelect(b)
-
-			// Assert
 			assert.NoError(t, err, "expected no error")
 			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
 			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
@@ -4957,26 +4953,302 @@ func BenchmarkPostgresDialect_WrapTable(b *testing.B) {
 	}
 }
 
-// func BenchmarkPostgresDialect_CompileSelect_Select_Simple(b *testing.B) {
-// 	d := PostgresDialect{}
-// 	builder := &builder{
-// 		dialect: d,
-// 		action:  "select",
-// 		table:   "users",
-// 		columns: []column{
-// 			{queryType: QueryBasic, name: "id"},
-// 			{queryType: QueryBasic, name: "name"},
-// 			{queryType: QueryBasic, name: "email"},
-// 			{queryType: QueryRaw, expr: "MAX(created_at) AS last_created"},
-// 		},
-// 		limit:  -1,
-// 		offset: -1,
-// 	}
+func BenchmarkPostgresDialect_Select(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "select all",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users")
+			},
+		},
+		{
+			name: "select one column",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					From("users")
+			},
+		},
+		{
+			name: "select two columns",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id", "name").
+					From("users")
+			},
+		},
+		{
+			name: "select multiple columns",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id", "name", "email", "email_verified_at", "phone_number", "age", "image", "created_at", "updated_at").
+					From("users")
+			},
+		},
+		{
+			name: "select with alias",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("u.id", "u.name AS user_name").
+					From("users u")
+			},
+		},
+	}
 
-// 	for b.Loop() {
-// 		_, _, _ = d.CompileSelect(builder)
-// 	}
-// }
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				builder := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(builder)
+				_, _, _ = builder.dialect.CompileSelect(builder)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_SelectRaw(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "select raw column",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					SelectRaw("COUNT(*)").
+					From("users")
+			},
+		},
+		{
+			name: "select raw with args",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					SelectRaw("SUM(CASE WHEN status = ? THEN 1 ELSE 0 END)", "active").
+					From("users")
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				builder := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(builder)
+				_, _, _ = builder.dialect.CompileSelect(builder)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_SelectSafe(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "simple select safe",
+			build: func(b *builder) QueryBuilder {
+				userInput := []string{"id", "name"}
+				whitelist := map[string]string{
+					"id":   "id",
+					"name": "name",
+				}
+
+				return b.
+					SelectSafe(userInput, whitelist).
+					From("users")
+			},
+		},
+		{
+			name: "select safe with alias",
+			build: func(b *builder) QueryBuilder {
+				userInput := []string{"id", "name", "u.email"}
+				whitelist := map[string]string{
+					"id":      "u.id",
+					"name":    "u.name",
+					"u.email": "u.email",
+				}
+
+				return b.
+					SelectSafe(userInput, whitelist).
+					From("users u")
+			},
+		},
+		{
+			name: "select safe with ignore inputs",
+			build: func(b *builder) QueryBuilder {
+				userInput := []string{"id", "name", "not_allowed"}
+				whitelist := map[string]string{
+					"id":   "id",
+					"name": "u.name",
+				}
+
+				return b.
+					SelectSafe(userInput, whitelist).
+					From("users")
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				builder := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(builder)
+				_, _, _ = builder.dialect.CompileSelect(builder)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_AddSelect(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "add one column to existing column",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelect("email").
+					From("users")
+			},
+		},
+		{
+			name: "add two columns to existing column",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelect("name", "email").
+					From("users")
+			},
+		},
+		{
+			name: "add multiple columns to existing column",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelect("name", "email", "email_verified_at", "phone_number", "age", "image", "created_at", "updated_at").
+					From("users")
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				builder := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(builder)
+				_, _, _ = builder.dialect.CompileSelect(builder)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_AddSelectRaw(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "add select raw to existing select",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelectRaw("COUNT(*) as total_users").
+					From("users")
+			},
+		},
+		{
+			name: "add select raw with args to existing select",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("id").
+					AddSelectRaw("SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS active_users", "active").
+					From("users")
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				builder := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(builder)
+				_, _, _ = builder.dialect.CompileSelect(builder)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_AddSelectSafe(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "add select safe to existing select",
+			build: func(b *builder) QueryBuilder {
+				userInput := []string{"name", "email"}
+				whitelist := map[string]string{
+					"name":  "name",
+					"email": "email",
+				}
+
+				return b.
+					Select("id").
+					AddSelectSafe(userInput, whitelist).
+					From("users")
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				builder := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(builder)
+				_, _, _ = builder.dialect.CompileSelect(builder)
+			}
+		})
+	}
+}
 
 func BenchmarkPostgresDialect_Where(b *testing.B) {
 	benchmarks := []struct {

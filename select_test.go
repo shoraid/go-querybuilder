@@ -10,38 +10,46 @@ func TestBuilder_Select(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		columns        []string
-		expectedAction string
-		expectedCols   []column
+		name            string
+		initialColumns  []column
+		columns         []string
+		expectedAction  string
+		expectedColumns []column
 	}{
 		{
-			name:           "should set single column",
-			columns:        []string{"id"},
-			expectedAction: "select",
-			expectedCols:   []column{{queryType: QueryBasic, name: "id"}},
+			name:            "should set single column",
+			columns:         []string{"id"},
+			expectedAction:  "select",
+			expectedColumns: []column{{queryType: QueryBasic, name: "id"}},
 		},
 		{
 			name:           "should set multiple columns",
 			columns:        []string{"id", "name", "email"},
 			expectedAction: "select",
-			expectedCols: []column{
+			expectedColumns: []column{
 				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "name"},
 				{queryType: QueryBasic, name: "email"},
 			},
 		},
 		{
-			name:           "should reset columns when called again",
-			columns:        []string{"username"},
-			expectedAction: "select",
-			expectedCols:   []column{{queryType: QueryBasic, name: "username"}},
+			name:            "should reset columns when called again",
+			initialColumns:  []column{{queryType: QueryBasic, name: "dummy"}},
+			columns:         []string{"username"},
+			expectedAction:  "select",
+			expectedColumns: []column{{queryType: QueryBasic, name: "username"}},
 		},
 		{
-			name:           "should handle empty column list (select all)",
-			columns:        []string{},
-			expectedAction: "select",
-			expectedCols:   []column{},
+			name:            "should handle empty column list (select all)",
+			columns:         []string{},
+			expectedAction:  "select",
+			expectedColumns: []column{},
+		},
+		{
+			name:            "should handle nil column list",
+			columns:         nil,
+			expectedAction:  "select",
+			expectedColumns: []column{},
 		},
 	}
 
@@ -50,16 +58,14 @@ func TestBuilder_Select(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{}
-			// Pre-fill with some data to check reset behavior
-			b.columns = []column{{queryType: QueryBasic, name: "dummy"}}
+			b := &builder{columns: tt.initialColumns}
 
 			// Act
 			result := b.Select(tt.columns...)
 
 			// Assert
 			assert.Equal(t, tt.expectedAction, b.action, "expected action to be set to select")
-			assert.Equal(t, tt.expectedCols, b.columns, "expected columns to be updated correctly")
+			assert.Equal(t, tt.expectedColumns, b.columns, "expected columns to be updated correctly")
 			assert.Equal(t, b, result, "expected Select to return the same builder instance")
 		})
 	}
@@ -69,18 +75,20 @@ func TestBuilder_SelectRaw(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		expression     string
-		args           []any
-		expectedAction string
-		expectedCols   []column
+		name            string
+		initialColumns  []column
+		expression      string
+		args            []any
+		expectedAction  string
+		expectedColumns []column
+		expectedErr     error
 	}{
 		{
 			name:           "should set single raw expression",
 			expression:     "COUNT(*) as total",
 			args:           []any{},
 			expectedAction: "select",
-			expectedCols: []column{{
+			expectedColumns: []column{{
 				queryType: QueryRaw, expr: "COUNT(*) as total", args: []any{},
 			}},
 		},
@@ -89,18 +97,29 @@ func TestBuilder_SelectRaw(t *testing.T) {
 			expression:     "CASE WHEN status = ? THEN 'Active' ELSE 'Inactive' END",
 			args:           []any{"active"},
 			expectedAction: "select",
-			expectedCols: []column{{
+			expectedColumns: []column{{
 				queryType: QueryRaw, expr: "CASE WHEN status = ? THEN 'Active' ELSE 'Inactive' END", args: []any{"active"}},
 			},
 		},
 		{
-			name:           "should reset columns when called again with raw expression",
+			name: "should reset columns when called again with raw expression",
+			initialColumns: []column{
+				{queryType: QueryBasic, name: "dummy"},
+			},
 			expression:     "SUM(amount)",
 			args:           []any{},
 			expectedAction: "select",
-			expectedCols: []column{{
+			expectedColumns: []column{{
 				queryType: QueryRaw, expr: "SUM(amount)", args: []any{}},
 			},
+		},
+		{
+			name:            "should return error for empty expression",
+			expression:      "",
+			args:            []any{},
+			expectedAction:  "select",
+			expectedColumns: []column{},
+			expectedErr:     ErrEmptyExpression,
 		},
 	}
 
@@ -109,16 +128,21 @@ func TestBuilder_SelectRaw(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{}
-			// Pre-fill with some data to check reset behavior
-			b.columns = []column{{queryType: QueryBasic, name: "dummy"}}
+			b := &builder{columns: tt.initialColumns}
 
 			// Act
 			result := b.SelectRaw(tt.expression, tt.args...)
 
 			// Assert
+			if tt.expectedErr != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedErr, "expected error message to match")
+				return
+			}
+
+			assert.NoError(t, b.err)
 			assert.Equal(t, tt.expectedAction, b.action, "expected action to be set to select")
-			assert.Equal(t, tt.expectedCols, b.columns, "expected columns to be updated correctly")
+			assert.Equal(t, tt.expectedColumns, b.columns, "expected columns to be updated correctly")
 			assert.Equal(t, b, result, "expected SelectRaw to return the same builder instance")
 		})
 	}
@@ -135,18 +159,19 @@ func TestBuilder_SelectSafe(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		userInput      []string
-		whitelist      map[string]string
-		expectedAction string
-		expectedCols   []column
+		name            string
+		initialColumns  []column
+		userInput       []string
+		whitelist       map[string]string
+		expectedAction  string
+		expectedColumns []column
 	}{
 		{
 			name:           "should set valid columns from whitelist",
 			userInput:      []string{"id", "name"},
 			whitelist:      whitelist,
 			expectedAction: "select",
-			expectedCols: []column{
+			expectedColumns: []column{
 				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "name"},
 			},
@@ -156,24 +181,24 @@ func TestBuilder_SelectSafe(t *testing.T) {
 			userInput:      []string{"id", "email"},
 			whitelist:      whitelist,
 			expectedAction: "select",
-			expectedCols: []column{
+			expectedColumns: []column{
 				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "u.email"},
 			},
 		},
 		{
-			name:           "should handle empty user input (select all)",
-			userInput:      []string{},
-			whitelist:      whitelist,
-			expectedAction: "select",
-			expectedCols:   []column{},
+			name:            "should handle empty user input (select all)",
+			userInput:       []string{},
+			whitelist:       whitelist,
+			expectedAction:  "select",
+			expectedColumns: []column{},
 		},
 		{
 			name:           "should filter out invalid column and include valid ones",
 			userInput:      []string{"id", "invalid_col", "name"},
 			whitelist:      whitelist,
 			expectedAction: "select",
-			expectedCols: []column{
+			expectedColumns: []column{
 				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "name"},
 			},
@@ -182,7 +207,20 @@ func TestBuilder_SelectSafe(t *testing.T) {
 			name:      "should return empty columns for all invalid input",
 			userInput: []string{"invalid_col1", "invalid_col2"},
 			whitelist: whitelist, expectedAction: "select",
-			expectedCols: []column{},
+			expectedColumns: []column{},
+		},
+		{
+			name: "should reset columns when called again",
+			initialColumns: []column{
+				{queryType: QueryBasic, name: "dummy"},
+			},
+			userInput:      []string{"id", "name"},
+			whitelist:      whitelist,
+			expectedAction: "select",
+			expectedColumns: []column{
+				{queryType: QueryBasic, name: "id"},
+				{queryType: QueryBasic, name: "name"},
+			},
 		},
 	}
 
@@ -191,16 +229,14 @@ func TestBuilder_SelectSafe(t *testing.T) {
 			t.Parallel()
 
 			// Arrange
-			b := &builder{}
-			// Pre-fill with some data to check reset behavior
-			b.columns = []column{{queryType: QueryBasic, name: "dummy"}}
+			b := &builder{columns: tt.initialColumns}
 
 			// Act
 			result := b.SelectSafe(tt.userInput, tt.whitelist)
 
 			// Assert
 			assert.Equal(t, tt.expectedAction, b.action, "expected action to be set to select")
-			assert.Equal(t, tt.expectedCols, b.columns, "expected columns to be updated correctly")
+			assert.Equal(t, tt.expectedColumns, b.columns, "expected columns to be updated correctly")
 			assert.Equal(t, b, result, "expected SelectSafe to return the same builder instance")
 		})
 	}
@@ -210,25 +246,31 @@ func TestBuilder_AddSelect(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		initialColumns []column
-		addColumns     []string
-		expectedCols   []column
+		name            string
+		initialColumns  []column
+		addColumns      []string
+		expectedColumns []column
 	}{
 		{
-			name:           "should add a single column to empty list",
-			initialColumns: []column{},
-			addColumns:     []string{"id"},
-			expectedCols:   []column{{queryType: QueryBasic, name: "id"}},
+			name:            "should add a single column to empty list",
+			initialColumns:  []column{},
+			addColumns:      []string{"id"},
+			expectedColumns: []column{{queryType: QueryBasic, name: "id"}},
 		},
 		{
 			name:           "should add multiple columns to empty list",
 			initialColumns: []column{},
 			addColumns:     []string{"id", "name"},
-			expectedCols: []column{{
-				queryType: QueryBasic, name: "id"},
+			expectedColumns: []column{
+				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "name"},
 			},
+		},
+		{
+			name:            "should not add any columns if addColumns is empty",
+			initialColumns:  []column{{queryType: QueryBasic, name: "id"}},
+			addColumns:      []string{},
+			expectedColumns: []column{{queryType: QueryBasic, name: "id"}},
 		},
 		{
 			name: "should add a single column to existing list",
@@ -237,7 +279,7 @@ func TestBuilder_AddSelect(t *testing.T) {
 				{queryType: QueryBasic, name: "name"},
 			},
 			addColumns: []string{"email"},
-			expectedCols: []column{
+			expectedColumns: []column{
 				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "name"},
 				{queryType: QueryBasic, name: "email"},
@@ -250,16 +292,16 @@ func TestBuilder_AddSelect(t *testing.T) {
 				{queryType: QueryBasic, name: "name"},
 			},
 			addColumns: []string{"id"},
-			expectedCols: []column{
+			expectedColumns: []column{
 				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "name"},
 			},
 		},
 		{
-			name:           "should handle adding to nil column list",
-			initialColumns: nil,
-			addColumns:     []string{"id"},
-			expectedCols:   []column{{queryType: QueryBasic, name: "id"}},
+			name:            "should handle adding to nil column list",
+			initialColumns:  nil,
+			addColumns:      []string{"id"},
+			expectedColumns: []column{{queryType: QueryBasic, name: "id"}},
 		},
 	}
 
@@ -274,7 +316,7 @@ func TestBuilder_AddSelect(t *testing.T) {
 			result := b.AddSelect(tt.addColumns...)
 
 			// Assert
-			assert.Equal(t, tt.expectedCols, b.columns, "expected columns to be updated correctly")
+			assert.Equal(t, tt.expectedColumns, b.columns, "expected columns to be updated correctly")
 			assert.Equal(t, b, result, "expected AddSelect to return the same builder instance")
 		})
 	}
@@ -284,18 +326,19 @@ func TestBuilder_AddSelectRaw(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		initialColumns []column
-		expression     string
-		args           []any
-		expectedCols   []column
+		name            string
+		initialColumns  []column
+		expression      string
+		args            []any
+		expectedColumns []column
+		expectedErr     error
 	}{
 		{
 			name:           "should add a single raw expression to empty list",
 			initialColumns: []column{},
 			expression:     "COUNT(*) as total",
 			args:           []any{},
-			expectedCols: []column{{
+			expectedColumns: []column{{
 				queryType: QueryRaw,
 				expr:      "COUNT(*) as total",
 				args:      []any{},
@@ -309,7 +352,7 @@ func TestBuilder_AddSelectRaw(t *testing.T) {
 			},
 			expression: "SUM(amount) as total_amount",
 			args:       []any{},
-			expectedCols: []column{
+			expectedColumns: []column{
 				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "name"},
 				{queryType: QueryRaw, expr: "SUM(amount) as total_amount", args: []any{}},
@@ -320,16 +363,24 @@ func TestBuilder_AddSelectRaw(t *testing.T) {
 			initialColumns: []column{},
 			expression:     "CASE WHEN status = ? THEN 'Active' ELSE 'Inactive' END",
 			args:           []any{"active"},
-			expectedCols: []column{{
+			expectedColumns: []column{{
 				queryType: QueryRaw, expr: "CASE WHEN status = ? THEN 'Active' ELSE 'Inactive' END", args: []any{"active"}},
 			},
 		},
 		{
-			name:           "should handle adding to nil column list",
-			initialColumns: nil,
-			expression:     "MAX(created_at)",
-			args:           []any{},
-			expectedCols:   []column{{queryType: QueryRaw, expr: "MAX(created_at)", args: []any{}}},
+			name:            "should handle adding to nil column list",
+			initialColumns:  nil,
+			expression:      "MAX(created_at)",
+			args:            []any{},
+			expectedColumns: []column{{queryType: QueryRaw, expr: "MAX(created_at)", args: []any{}}},
+		},
+		{
+			name:            "should return error for empty expression",
+			initialColumns:  []column{},
+			expression:      "",
+			args:            []any{},
+			expectedColumns: []column{},
+			expectedErr:     ErrEmptyExpression,
 		},
 	}
 
@@ -344,7 +395,14 @@ func TestBuilder_AddSelectRaw(t *testing.T) {
 			result := b.AddSelectRaw(tt.expression, tt.args...)
 
 			// Assert
-			assert.Equal(t, tt.expectedCols, b.columns, "expected columns to be updated correctly")
+			if tt.expectedErr != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedErr, "expected error message to match")
+				return
+			}
+
+			assert.NoError(t, b.err)
+			assert.Equal(t, tt.expectedColumns, b.columns, "expected columns to be updated correctly")
 			assert.Equal(t, b, result, "expected AddSelectRaw to return the same builder instance")
 		})
 	}
@@ -361,25 +419,25 @@ func TestBuilder_AddSelectSafe(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		initialColumns []column
-		userInput      []string
-		whitelist      map[string]string
-		expectedCols   []column
+		name            string
+		initialColumns  []column
+		userInput       []string
+		whitelist       map[string]string
+		expectedColumns []column
 	}{
 		{
-			name:           "should add valid column from whitelist to empty list",
-			initialColumns: []column{},
-			userInput:      []string{"id"},
-			whitelist:      whitelist,
-			expectedCols:   []column{{queryType: QueryBasic, name: "id"}},
+			name:            "should add valid column from whitelist to empty list",
+			initialColumns:  []column{},
+			userInput:       []string{"id"},
+			whitelist:       whitelist,
+			expectedColumns: []column{{queryType: QueryBasic, name: "id"}},
 		},
 		{
 			name:           "should add multiple valid columns from whitelist to empty list",
 			initialColumns: []column{},
 			userInput:      []string{"id", "name"},
 			whitelist:      whitelist,
-			expectedCols: []column{
+			expectedColumns: []column{
 				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "name"},
 			},
@@ -392,7 +450,7 @@ func TestBuilder_AddSelectSafe(t *testing.T) {
 			},
 			userInput: []string{"email"},
 			whitelist: whitelist,
-			expectedCols: []column{
+			expectedColumns: []column{
 				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "name"},
 				{queryType: QueryBasic, name: "u.email"},
@@ -406,7 +464,7 @@ func TestBuilder_AddSelectSafe(t *testing.T) {
 			},
 			userInput: []string{"id"},
 			whitelist: whitelist,
-			expectedCols: []column{
+			expectedColumns: []column{
 				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "name"},
 			},
@@ -416,31 +474,31 @@ func TestBuilder_AddSelectSafe(t *testing.T) {
 			initialColumns: []column{{queryType: QueryBasic, name: "id"}},
 			userInput:      []string{"invalid_col", "name"},
 			whitelist:      whitelist,
-			expectedCols: []column{
+			expectedColumns: []column{
 				{queryType: QueryBasic, name: "id"},
 				{queryType: QueryBasic, name: "name"},
 			},
 		},
 		{
-			name:           "should handle adding to nil column list",
-			initialColumns: nil,
-			userInput:      []string{"id"},
-			whitelist:      whitelist,
-			expectedCols:   []column{{queryType: QueryBasic, name: "id"}},
+			name:            "should handle adding to nil column list",
+			initialColumns:  nil,
+			userInput:       []string{"id"},
+			whitelist:       whitelist,
+			expectedColumns: []column{{queryType: QueryBasic, name: "id"}},
 		},
 		{
-			name:           "should not add any columns if all user input is invalid",
-			initialColumns: []column{{queryType: QueryBasic, name: "id"}},
-			userInput:      []string{"invalid1", "invalid2"},
-			whitelist:      whitelist,
-			expectedCols:   []column{{queryType: QueryBasic, name: "id"}},
+			name:            "should not add any columns if all user input is invalid",
+			initialColumns:  []column{{queryType: QueryBasic, name: "id"}},
+			userInput:       []string{"invalid1", "invalid2"},
+			whitelist:       whitelist,
+			expectedColumns: []column{{queryType: QueryBasic, name: "id"}},
 		},
 		{
-			name:           "should handle empty user input",
-			initialColumns: []column{{queryType: QueryBasic, name: "id"}},
-			userInput:      []string{},
-			whitelist:      whitelist,
-			expectedCols:   []column{{queryType: QueryBasic, name: "id"}},
+			name:            "should handle empty user input",
+			initialColumns:  []column{{queryType: QueryBasic, name: "id"}},
+			userInput:       []string{},
+			whitelist:       whitelist,
+			expectedColumns: []column{{queryType: QueryBasic, name: "id"}},
 		},
 	}
 
@@ -455,7 +513,7 @@ func TestBuilder_AddSelectSafe(t *testing.T) {
 			result := b.AddSelectSafe(tt.userInput, tt.whitelist)
 
 			// Assert
-			assert.Equal(t, tt.expectedCols, b.columns, "expected columns to be updated correctly")
+			assert.Equal(t, tt.expectedColumns, b.columns, "expected columns to be updated correctly")
 			assert.Equal(t, b, result, "expected AddSelectSafe to return the same builder instance")
 		})
 	}
