@@ -107,6 +107,15 @@ func (d PostgresDialect) CompileSelect(b *builder) (string, []any, error) {
 	}
 	sb.WriteString(fromClause)
 
+	// JOIN clause
+	if len(b.joins) > 0 {
+		joinClause, err := d.compileJoinClause(b.joins, &args)
+		if err != nil {
+			return "", nil, err
+		}
+		sb.WriteString(joinClause)
+	}
+
 	// WHERE clause (recursive)
 	if len(b.wheres) > 0 {
 		whereClause, err := d.compileWhereClause(b.wheres, &args)
@@ -227,6 +236,28 @@ func (d PostgresDialect) compileFromClause(table table, globalArgs *[]any) (stri
 		if table.name != "" {
 			sb.WriteString(" AS ")
 			sb.WriteString(d.WrapIdentifier(table.name))
+		}
+	}
+
+	return sb.String(), nil
+}
+
+func (d PostgresDialect) compileJoinClause(joins []join, globalArgs *[]any) (string, error) {
+	var sb strings.Builder
+
+	for _, j := range joins {
+		switch j.queryType {
+		case QueryBasic:
+			sb.WriteString(" ")
+			sb.WriteString(j.joinType)
+			sb.WriteString(" ")
+			sb.WriteString(d.WrapTable(j.table))
+			sb.WriteString(" ON ")
+			sb.WriteString(d.WrapColumn(j.leftCol))
+			sb.WriteString(" ")
+			sb.WriteString(j.operator)
+			sb.WriteString(" ")
+			sb.WriteString(d.WrapColumn(j.rightCol))
 		}
 	}
 

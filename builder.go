@@ -52,6 +52,11 @@ type QueryBuilder interface {
 	WhereNotExists(sub func(QueryBuilder)) QueryBuilder
 	OrWhereNotExists(sub func(QueryBuilder)) QueryBuilder
 
+	// Joins
+	Join(table, leftCol, operator, rightCol string) QueryBuilder
+	LeftJoin(table, leftCol, operator, rightCol string) QueryBuilder
+	RightJoin(table, leftCol, operator, rightCol string) QueryBuilder
+
 	// Order By
 	OrderBy(column, direction string) QueryBuilder
 	OrderByRaw(expr string, args ...any) QueryBuilder
@@ -111,12 +116,22 @@ type where struct {
 	sub       QueryBuilder
 }
 
+type join struct {
+	queryType QueryType
+	joinType  string
+	table     string
+	leftCol   string
+	operator  string
+	rightCol  string
+}
+
 type builder struct {
 	dialect  Dialect
 	action   string
 	table    table
 	columns  []column
 	wheres   []where
+	joins    []join
 	orderBys []orderBy
 	limit    int
 	offset   int

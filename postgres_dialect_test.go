@@ -1429,6 +1429,324 @@ func TestPostgresDialect_FromSub(t *testing.T) {
 	}
 }
 
+func TestPostgresDialect_Join(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError error
+	}{
+		{
+			name: "should build query with INNER JOIN",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("users.id", "posts.title").
+					From("users").
+					Join("posts", "users.id", "=", "posts.user_id")
+			},
+			expectedSQL:  `SELECT "users"."id", "posts"."title" FROM "users" INNER JOIN "posts" ON "users"."id" = "posts"."user_id"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build query with multiple INNER JOINs",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("users.id", "posts.title", "comments.text").
+					From("users").
+					Join("posts", "users.id", "=", "posts.user_id").
+					Join("comments", "posts.id", "=", "comments.post_id")
+			},
+			expectedSQL:  `SELECT "users"."id", "posts"."title", "comments"."text" FROM "users" INNER JOIN "posts" ON "users"."id" = "posts"."user_id" INNER JOIN "comments" ON "posts"."id" = "comments"."post_id"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should return error when table name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Join("", "users.id", "=", "posts.user_id")
+			},
+			expectedError: ErrEmptyTable,
+		},
+		{
+			name: "should return error when left column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Join("posts", "", "=", "posts.user_id")
+			},
+			expectedError: ErrInvalidJoinCondition,
+		},
+		{
+			name: "should return error when operator is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Join("posts", "users.id", "", "posts.user_id")
+			},
+			expectedError: ErrInvalidJoinCondition,
+		},
+		{
+			name: "should return error when right column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					Join("posts", "users.id", "=", "")
+			},
+			expectedError: ErrInvalidJoinCondition,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_LeftJoin(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError error
+	}{
+		{
+			name: "should build query with LEFT JOIN",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("users.id", "posts.title").
+					From("users").
+					LeftJoin("posts", "users.id", "=", "posts.user_id")
+			},
+			expectedSQL:  `SELECT "users"."id", "posts"."title" FROM "users" LEFT JOIN "posts" ON "users"."id" = "posts"."user_id"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build query with multiple LEFT JOINs",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("users.id", "posts.title", "comments.text").
+					From("users").
+					LeftJoin("posts", "users.id", "=", "posts.user_id").
+					LeftJoin("comments", "posts.id", "=", "comments.post_id")
+			},
+			expectedSQL:  `SELECT "users"."id", "posts"."title", "comments"."text" FROM "users" LEFT JOIN "posts" ON "users"."id" = "posts"."user_id" LEFT JOIN "comments" ON "posts"."id" = "comments"."post_id"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should return error when table name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					LeftJoin("", "users.id", "=", "posts.user_id")
+			},
+			expectedError: ErrEmptyTable,
+		},
+		{
+			name: "should return error when left column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					LeftJoin("posts", "", "=", "posts.user_id")
+			},
+			expectedError: ErrInvalidJoinCondition,
+		},
+		{
+			name: "should return error when operator is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					LeftJoin("posts", "users.id", "", "posts.user_id")
+			},
+			expectedError: ErrInvalidJoinCondition,
+		},
+		{
+			name: "should return error when right column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					LeftJoin("posts", "users.id", "=", "")
+			},
+			expectedError: ErrInvalidJoinCondition,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_RightJoin(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError error
+	}{
+		{
+			name: "should build query with RIGHT JOIN",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("users.id", "posts.title").
+					From("users").
+					RightJoin("posts", "users.id", "=", "posts.user_id")
+			},
+			expectedSQL:  `SELECT "users"."id", "posts"."title" FROM "users" RIGHT JOIN "posts" ON "users"."id" = "posts"."user_id"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build query with multiple RIGHT JOINs",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select("users.id", "posts.title", "comments.text").
+					From("users").
+					RightJoin("posts", "users.id", "=", "posts.user_id").
+					RightJoin("comments", "posts.id", "=", "comments.post_id")
+			},
+			expectedSQL:  `SELECT "users"."id", "posts"."title", "comments"."text" FROM "users" RIGHT JOIN "posts" ON "users"."id" = "posts"."user_id" RIGHT JOIN "comments" ON "posts"."id" = "comments"."post_id"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should return error when table name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					RightJoin("", "users.id", "=", "posts.user_id")
+			},
+			expectedError: ErrEmptyTable,
+		},
+		{
+			name: "should return error when left column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					RightJoin("posts", "", "=", "posts.user_id")
+			},
+			expectedError: ErrInvalidJoinCondition,
+		},
+		{
+			name: "should return error when operator is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					RightJoin("posts", "users.id", "", "posts.user_id")
+			},
+			expectedError: ErrInvalidJoinCondition,
+		},
+		{
+			name: "should return error when right column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					RightJoin("posts", "users.id", "=", "")
+			},
+			expectedError: ErrInvalidJoinCondition,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
 func TestPostgresDialect_Where(t *testing.T) {
 	t.Parallel()
 
