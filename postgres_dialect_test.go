@@ -4910,70 +4910,48 @@ func TestPostgresDialect_OrWhereNotExists(t *testing.T) {
 	}
 }
 
-func TestPostgresDialect_CompileSelect_Select_OrderBy(t *testing.T) {
+func TestPostgresDialect_OrderBy(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name          string
-		table         string
-		orderBys      []orderBy
+		build         func(*builder) QueryBuilder
 		expectedSQL   string
 		expectedArgs  []any
-		expectedError string
+		expectedError error
 	}{
 		{
-			name:  "should build select with single basic order by",
-			table: "users",
-			orderBys: []orderBy{
-				{queryType: QueryBasic, column: "id", dir: "ASC"},
+			name: "should build single order by clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrderBy("name", "ASC")
 			},
-			expectedSQL:  `SELECT * FROM "users" ORDER BY "id" ASC`,
+			expectedSQL:  `SELECT * FROM "users" ORDER BY "name" ASC`,
 			expectedArgs: []any{},
 		},
 		{
-			name:  "should build select with multiple basic order by",
-			table: "users",
-			orderBys: []orderBy{
-				{queryType: QueryBasic, column: "name", dir: "DESC"},
-				{queryType: QueryBasic, column: "created_at", dir: "ASC"},
+			name: "should build multiple order by clauses",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrderBy("name", "ASC").
+					OrderBy("age", "DESC")
 			},
-			expectedSQL:  `SELECT * FROM "users" ORDER BY "name" DESC, "created_at" ASC`,
+			expectedSQL:  `SELECT * FROM "users" ORDER BY "name" ASC, "age" DESC`,
 			expectedArgs: []any{},
 		},
 		{
-			name:  "should build select with raw order by",
-			table: "products",
-			orderBys: []orderBy{
-				{queryType: QueryRaw, expr: "LENGTH(name) DESC"},
+			name: "should return error when column name is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrderBy("", "ASC")
 			},
-			expectedSQL:  `SELECT * FROM "products" ORDER BY LENGTH(name) DESC`,
-			expectedArgs: []any{},
-		},
-		{
-			name:  "should build select with raw order by with args",
-			table: "products",
-			orderBys: []orderBy{
-				{queryType: QueryRaw, expr: "CASE WHEN price > ? THEN 1 ELSE 0 END DESC", args: []any{100}},
-			},
-			expectedSQL:  `SELECT * FROM "products" ORDER BY CASE WHEN price > $1 THEN 1 ELSE 0 END DESC`,
-			expectedArgs: []any{100},
-		},
-		{
-			name:  "should build select with mixed order by",
-			table: "orders",
-			orderBys: []orderBy{
-				{queryType: QueryBasic, column: "status", dir: "ASC"},
-				{queryType: QueryRaw, expr: "CASE WHEN amount > ? THEN 1 ELSE 0 END DESC", args: []any{100}},
-			},
-			expectedSQL:  `SELECT * FROM "orders" ORDER BY "status" ASC, CASE WHEN amount > $1 THEN 1 ELSE 0 END DESC`,
-			expectedArgs: []any{100},
-		},
-		{
-			name:         "should not add order by clause if empty",
-			table:        "items",
-			orderBys:     []orderBy{},
-			expectedSQL:  `SELECT * FROM "items"`,
-			expectedArgs: []any{},
+			expectedError: ErrEmptyColumn,
 		},
 	}
 
@@ -4984,23 +4962,206 @@ func TestPostgresDialect_CompileSelect_Select_OrderBy(t *testing.T) {
 			// Arrange
 			b := &builder{
 				dialect: PostgresDialect{},
-				action:  "select",
-				table: table{
-					queryType: QueryBasic,
-					name:      tt.table,
-				},
-				orderBys: tt.orderBys,
-				limit:    -1,
-				offset:   -1,
+				limit:   -1,
+				offset:  -1,
 			}
+			tt.build(b)
 
 			// Act
 			sql, args, err := b.dialect.CompileSelect(b)
 
 			// Assert
-			if tt.expectedError != "" {
+			if tt.expectedError != nil {
 				assert.Error(t, err, "expected an error")
-				assert.Contains(t, err.Error(), tt.expectedError, "expected error message to contain output")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrderByRaw(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError error
+	}{
+		{
+			name: "should build single raw order by clause",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrderByRaw("LENGTH(name) DESC")
+			},
+			expectedSQL:  `SELECT * FROM "users" ORDER BY LENGTH(name) DESC`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should build multiple raw order by clauses with args",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrderByRaw("LENGTH(name) ASC").
+					OrderByRaw("CASE WHEN status = ? THEN 1 ELSE 2 END", "active")
+			},
+			expectedSQL:  `SELECT * FROM "users" ORDER BY LENGTH(name) ASC, CASE WHEN status = $1 THEN 1 ELSE 2 END`,
+			expectedArgs: []any{"active"},
+		},
+		{
+			name: "should return error when raw expression is empty",
+			build: func(b *builder) QueryBuilder {
+				return b.
+					Select().
+					From("users").
+					OrderByRaw("")
+			},
+			expectedError: ErrEmptyExpression,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
+				assert.Empty(t, sql, "expected empty SQL on error")
+				assert.Empty(t, args, "expected empty args on error")
+				return
+			}
+
+			assert.NoError(t, err, "expected no error")
+			assert.Equal(t, tt.expectedSQL, sql, "expected SQL to match output")
+			assert.Equal(t, tt.expectedArgs, args, "expected args to match output")
+		})
+	}
+}
+
+func TestPostgresDialect_OrderBySafe(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		build         func(*builder) QueryBuilder
+		expectedSQL   string
+		expectedArgs  []any
+		expectedError error
+	}{
+		{
+			name: "should build order by clause with valid whitelist entry",
+			build: func(b *builder) QueryBuilder {
+				whitelist := map[string]string{
+					"name": "users.name",
+				}
+				return b.
+					Select().
+					From("users").
+					OrderBySafe("name", "ASC", whitelist)
+			},
+			expectedSQL:  `SELECT * FROM "users" ORDER BY "users"."name" ASC`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should default to ASC when direction is invalid",
+			build: func(b *builder) QueryBuilder {
+				whitelist := map[string]string{
+					"age": "users.age",
+				}
+				return b.
+					Select().
+					From("users").
+					OrderBySafe("age", "INVALID", whitelist)
+			},
+			expectedSQL:  `SELECT * FROM "users" ORDER BY "users"."age" ASC`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should ignore when user input not in whitelist",
+			build: func(b *builder) QueryBuilder {
+				whitelist := map[string]string{
+					"name": "users.name",
+				}
+				return b.
+					Select().
+					From("users").
+					OrderBySafe("email", "DESC", whitelist)
+			},
+			expectedSQL:  `SELECT * FROM "users"`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should allow DESC when provided correctly",
+			build: func(b *builder) QueryBuilder {
+				whitelist := map[string]string{
+					"created_at": "users.created_at",
+				}
+				return b.
+					Select().
+					From("users").
+					OrderBySafe("created_at", "DESC", whitelist)
+			},
+			expectedSQL:  `SELECT * FROM "users" ORDER BY "users"."created_at" DESC`,
+			expectedArgs: []any{},
+		},
+		{
+			name: "should return error when mapped column is empty",
+			build: func(b *builder) QueryBuilder {
+				whitelist := map[string]string{
+					"age": "",
+				}
+				return b.
+					Select().
+					From("users").
+					OrderBySafe("age", "ASC", whitelist)
+			},
+			expectedError: ErrEmptyColumn,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			b := &builder{
+				dialect: PostgresDialect{},
+				limit:   -1,
+				offset:  -1,
+			}
+			tt.build(b)
+
+			// Act
+			sql, args, err := b.dialect.CompileSelect(b)
+
+			// Assert
+			if tt.expectedError != nil {
+				assert.Error(t, err, "expected an error")
+				assert.ErrorIs(t, err, tt.expectedError, "expected error to match output")
 				assert.Empty(t, sql, "expected empty SQL on error")
 				assert.Empty(t, args, "expected empty args on error")
 				return
@@ -6300,6 +6461,154 @@ func BenchmarkPostgresDialect_WhereNotExists(b *testing.B) {
 									WhereRaw("order_items.order_id = orders.id")
 							})
 					})
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(bd)
+
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_OrderBy(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "OrderBy single column",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					OrderBy("name", "ASC")
+			},
+		},
+		{
+			name: "OrderBy multiple columns",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					OrderBy("name", "ASC").
+					OrderBy("age", "DESC")
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(bd)
+
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_OrderByRaw(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "OrderByRaw single expression",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					OrderByRaw("LENGTH(name) DESC")
+			},
+		},
+		{
+			name: "OrderByRaw multiple expressions with args",
+			build: func(bd *builder) QueryBuilder {
+				return bd.
+					Select().
+					From("users").
+					OrderByRaw("CASE WHEN name = ? THEN 0 ELSE 1 END", "Admin").
+					OrderByRaw("created_at DESC")
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for b.Loop() {
+				bd := &builder{
+					dialect: PostgresDialect{},
+					limit:   -1,
+					offset:  -1,
+				}
+
+				bm.build(bd)
+
+				_, _, _ = bd.dialect.CompileSelect(bd)
+			}
+		})
+	}
+}
+
+func BenchmarkPostgresDialect_OrderBySafe(b *testing.B) {
+	benchmarks := []struct {
+		name  string
+		build func(*builder) QueryBuilder
+	}{
+		{
+			name: "OrderBySafe single column",
+			build: func(bd *builder) QueryBuilder {
+				whitelist := map[string]string{
+					"name": "users.name",
+				}
+				return bd.
+					Select().
+					From("users").
+					OrderBySafe("name", "ASC", whitelist)
+			},
+		},
+		{
+			name: "OrderBySafe multiple columns",
+			build: func(bd *builder) QueryBuilder {
+				whitelist := map[string]string{
+					"name": "users.name",
+					"age":  "users.age",
+				}
+				return bd.
+					Select().
+					From("users").
+					OrderBySafe("name", "ASC", whitelist).
+					OrderBySafe("age", "DESC", whitelist)
+			},
+		},
+		{
+			name: "OrderBySafe with invalid input",
+			build: func(bd *builder) QueryBuilder {
+				whitelist := map[string]string{
+					"name": "users.name",
+				}
+				return bd.
+					Select().
+					From("users").
+					OrderBySafe("invalid_column", "ASC", whitelist)
 			},
 		},
 	}

@@ -15,6 +15,7 @@ func TestBuilder_OrderBy(t *testing.T) {
 		column           string
 		direction        string
 		expectedOrderBys []orderBy
+		expectedErr      error
 	}{
 		{
 			name:            "should add single ASC order by clause",
@@ -55,6 +56,16 @@ func TestBuilder_OrderBy(t *testing.T) {
 				{queryType: QueryBasic, column: "email", dir: "ASC"},
 			},
 		},
+		{
+			name:             "should return error for empty column",
+			initialOrderBys:  []orderBy{},
+			column:           "",
+			direction:        "asc",
+			expectedOrderBys: []orderBy{
+				// No order by should be added
+			},
+			expectedErr: ErrEmptyColumn,
+		},
 	}
 
 	for _, tt := range tests {
@@ -68,6 +79,14 @@ func TestBuilder_OrderBy(t *testing.T) {
 			result := b.OrderBy(tt.column, tt.direction)
 
 			// Assert
+			if tt.expectedErr != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedErr, "expected error to match")
+				assert.Empty(t, b.orderBys, "expected empty order bys on error")
+				return
+			}
+
+			assert.NoError(t, b.err, "expected no error")
 			assert.Equal(t, tt.expectedOrderBys, b.orderBys, "expected order by clauses to be added")
 			assert.Equal(t, b, result, "expected OrderBy() to return the same builder instance")
 		})
@@ -84,6 +103,7 @@ func TestBuilder_OrderByRaw(t *testing.T) {
 		args             []any
 		expectedOrderBys []orderBy
 		expectedArgs     []any
+		expectedErr      error
 	}{
 		{
 			name:            "should add raw order by expression",
@@ -117,6 +137,12 @@ func TestBuilder_OrderByRaw(t *testing.T) {
 			},
 			expectedArgs: []any{100, 1, 0},
 		},
+		{
+			name:             "should return error when expression is empty",
+			expression:       "",
+			expectedOrderBys: nil,
+			expectedErr:      ErrEmptyExpression,
+		},
 	}
 
 	for _, tt := range tests {
@@ -130,6 +156,14 @@ func TestBuilder_OrderByRaw(t *testing.T) {
 			result := b.OrderByRaw(tt.expression, tt.args...)
 
 			// Assert
+			if tt.expectedErr != nil {
+				assert.Error(t, b.err, "expected an error")
+				assert.ErrorIs(t, b.err, tt.expectedErr, "expected error to match")
+				assert.Empty(t, b.orderBys, "expected empty order bys on error")
+				return
+			}
+
+			assert.NoError(t, b.err, "expected no error")
 			assert.Equal(t, tt.expectedOrderBys, b.orderBys, "expected raw order by clauses to be added")
 			assert.Equal(t, b, result, "expected OrderByRaw() to return the same builder instance")
 		})

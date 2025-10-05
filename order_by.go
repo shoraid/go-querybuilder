@@ -5,6 +5,11 @@ import (
 )
 
 func (b *builder) OrderBy(column, dir string) QueryBuilder {
+	if column == "" {
+		b.addErr(ErrEmptyColumn)
+		return b
+	}
+
 	dir = strings.ToUpper(dir)
 	if dir != "ASC" && dir != "DESC" {
 		dir = "ASC"
@@ -20,6 +25,11 @@ func (b *builder) OrderBy(column, dir string) QueryBuilder {
 }
 
 func (b *builder) OrderByRaw(expr string, args ...any) QueryBuilder {
+	if expr == "" {
+		b.addErr(ErrEmptyExpression)
+		return b
+	}
+
 	b.orderBys = append(b.orderBys, orderBy{
 		queryType: QueryRaw,
 		expr:      expr,
